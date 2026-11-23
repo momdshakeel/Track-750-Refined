@@ -1144,46 +1144,16 @@ def _show_symbol_chart_dialog(symbol: str) -> None:
     footer = (f"Chart and indicators: end-of-day data as of {as_of:%Y-%m-%d} · NSE / Yahoo Finance · "
               "may contain errors · research and education only")
 
-    chart_slot = st.container()   # filled below, once the optional manual marker is known
+    chart_slot = st.container()   # filled below the auto-detected base table
     table_html = _base_table_html(payload["base_history"])
     if table_html:
         st.markdown(table_html, unsafe_allow_html=True)
     else:
         st.info("No completed or forming bases matching the rolling history rule were found.")
 
-    marker = {"start": "", "end": "", "pivot": 0.0}
-    with st.expander("Custom base marker (optional)", expanded=False):
-        first_day = datetime.strptime(payload["dates"][0], "%Y-%m-%d").date()
-        suggested = datetime.strptime(payload["dates"][max(0, len(payload["dates"]) - 61)], "%Y-%m-%d").date()
-        start_key, end_key = f"dialog_base_start_{symbol}", f"dialog_base_end_{symbol}"
-        st.session_state.setdefault(start_key, suggested)
-        st.session_state.setdefault(end_key, as_of)
-        start_saved = max(first_day, min(st.session_state[start_key], as_of))
-        st.session_state[start_key] = start_saved
-        st.session_state[end_key] = max(start_saved, min(st.session_state[end_key], as_of))
-        draw = st.checkbox("Draw this marker on the chart", key=f"dialog_marker_on_{symbol}")
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            base_start = st.date_input("Base start", min_value=first_day, max_value=as_of, key=start_key)
-        with c2:
-            base_end = st.date_input("Base end", min_value=base_start, max_value=as_of, key=end_key)
-        start_text, end_text = base_start.isoformat(), base_end.isoformat()
-        base_bars = [bar for bar in bars if start_text <= bar["date"] <= end_text]
-        if base_bars:
-            default_pivot = max(bar["high"] for bar in base_bars)
-            with c3:
-                pivot = st.number_input("Pivot price", min_value=0.0, value=float(default_pivot),
-                                        step=max(default_pivot * .01, .05), format="%.2f",
-                                        key=f"dialog_pivot_{symbol}_{start_text}_{end_text}")
-            depth = (default_pivot - min(bar["low"] for bar in base_bars)) / default_pivot * 100
-            st.caption(f"Selected base depth **{depth:.1f}%** · {len(base_bars)} sessions")
-            if draw:
-                marker = {"start": start_text, "end": end_text, "pivot": pivot}
-        else:
-            st.warning("Choose dates that contain chart candles.")
-
+    # Charts are fully automatic: only the scanner's detected bases are drawn.
     with chart_slot:
-        ui.chart_explorer(bars, symbol, marker["start"], marker["end"], marker["pivot"],
+        ui.chart_explorer(bars, symbol, "", "", 0.0,
                           payload["base_history"], visible_window="1Y", info=info, footer=footer)
     if not _DIALOG_HAS_DISMISS and st.button("Close chart", key=f"close_chart_dialog_{symbol}"):
         _clear_chart_request()
@@ -1367,7 +1337,7 @@ elif active_screen == "chart":
             st.error(f"Could not load chart history: {exc}")
     loaded = st.session_state.get("chart_explorer_data")
     if loaded and loaded["symbol"] == chart_symbol and loaded["period"] == chart_period and loaded["bars"]:
-        first_day, last_day = datetime.strptime(loaded["dates"][0], "%Y-%m-%d").date(), datetime.strptime(loaded["dates"][-1], "%Y-%m-%d").date()
+        last_day = datetime.strptime(loaded["dates"][-1], "%Y-%m-%d").date()
         stock_row = result[result["Symbol"].astype(str) == chart_symbol]
         stock_row = stock_row.iloc[0] if not stock_row.empty else None
         sector_name = str(stock_row.get("Sector", "")) if stock_row is not None else ""
@@ -1389,46 +1359,17 @@ elif active_screen == "chart":
             old_rs, now_rs = rs_bars[old_i], rs_bars[-1]
             change = (now_rs / old_rs - 1) * 100 if old_rs and now_rs else None
             col.metric(label, f"{change:+.1f}%" if change is not None else "Unavailable")
-        suggested_start = datetime.strptime(loaded["dates"][max(0, len(loaded["dates"]) - 61)], "%Y-%m-%d").date()
-        start_key = f"chart_base_start_{chart_symbol}_{chart_period}"
-        end_key = f"chart_base_end_{chart_symbol}_{chart_period}"
-        if start_key not in st.session_state:
-            st.session_state[start_key] = suggested_start
-        if end_key not in st.session_state:
-            st.session_state[end_key] = last_day
-        # Keep the end-date widget valid when the user moves the start past it.
-        saved_start = max(first_day, min(st.session_state[start_key], last_day))
-        saved_end = max(saved_start, min(st.session_state[end_key], last_day))
-        st.session_state[start_key] = saved_start
-        st.session_state[end_key] = saved_end
         range_default = {"1y": "1Y", "2y": "2Y", "5y": "5Y"}.get(chart_period, "2Y")
         visible_window = range_default  # initial zoom; the chart has its own range buttons
-        marks = st.columns([1, 1, 1.15, 1.3])
-        with marks[0]:
-            base_start = st.date_input("Base start", min_value=first_day, max_value=last_day, key=start_key)
-        with marks[1]:
-            base_end = st.date_input("Base end", min_value=base_start, max_value=last_day, key=end_key)
-        start_text, end_text = base_start.isoformat(), base_end.isoformat()
-        selected_bars = [b for b in loaded["bars"] if start_text <= datetime.fromtimestamp(b["timestamp"] / 1000, IST).date().isoformat() <= end_text]
-        if not selected_bars:
-            st.warning("No candles fall inside the selected base dates. Adjust the range.")
+        # Fully automatic chart: no manual base dates or pivot — only detected bases are drawn.
+        ui.chart_explorer(loaded["bars"], chart_symbol, "", "", 0.0,
+                          loaded.get("base_history", []), visible_window=visible_window)
+        page_table = _base_table_html(loaded.get("base_history", []))
+        if page_table:
+            st.markdown(page_table, unsafe_allow_html=True)
         else:
-            default_pivot = max(b["high"] for b in selected_bars)
-            pivot_key = f"chart_pivot_{chart_symbol}_{chart_period}_{start_text}_{end_text}"
-            with marks[2]:
-                pivot = st.number_input("Pivot price", min_value=0.0, value=float(default_pivot), step=max(default_pivot * .01, .05), format="%.2f", key=pivot_key)
-            base_low = min(b["low"] for b in selected_bars)
-            base_depth = (default_pivot - base_low) / default_pivot * 100 if default_pivot else 0
-            with marks[3]:
-                st.metric("Selected base depth", f"{base_depth:.1f}%", help="(Highest high − lowest low) ÷ highest high for the selected dates.")
-            ui.chart_explorer(loaded["bars"], chart_symbol, start_text, end_text, pivot,
-                              loaded.get("base_history", []), visible_window=visible_window)
-            page_table = _base_table_html(loaded.get("base_history", []))
-            if page_table:
-                st.markdown(page_table, unsafe_allow_html=True)
-            else:
-                st.info("No completed or forming bases matching the rolling history rule were found in this chart data.")
-            st.caption(f"{len(loaded['bars'])} daily candles · prices through {last_day:%d %b %Y} · source: Yahoo Finance. Chart history, RS series and base records are session-only and are not saved to project files.")
+            st.info("No completed or forming bases matching the rolling history rule were found in this chart data.")
+        st.caption(f"{len(loaded['bars'])} daily candles · prices through {last_day:%d %b %Y} · source: Yahoo Finance. Chart history, RS series and base records are session-only and are not saved to project files.")
     elif loaded:
         st.info("Choose the loaded symbol and history range above, or load a new chart.")
 elif active_screen == "trend":
