@@ -247,10 +247,20 @@ def reload_latest_data():
 
 
 with slot_header:
-    head_left, head_right = st.columns([3, 1.15], gap="small", vertical_alignment="center")
+    head_left, head_theme, head_right = st.columns([3, .62, 1.15], gap="small", vertical_alignment="center")
     with head_left:
         ui.brand("MarketPulse 750", "Nifty Total Market · Momentum &amp; relative strength",
                  "RS, trend, VCP and breakout scans across the Nifty Total Market (Nifty 500 + Microcap 250).")
+    with head_theme:
+        with st.container(key="theme-toggle"):
+            _theme_label = lambda value: "☀️" if value == "light" else "🌙"
+            try:
+                st.segmented_control("Theme", ["light", "dark"], format_func=_theme_label,
+                                     key="appearance_theme", label_visibility="collapsed",
+                                     help="Switch the whole app between light and dark theme")
+            except (TypeError, AttributeError):  # older Streamlit versions
+                st.radio("Theme", ["light", "dark"], format_func=_theme_label,
+                         key="appearance_theme", horizontal=True, label_visibility="collapsed")
     with head_right:
         _names = result["Company Name"].fillna("").astype(str)
         search_labels = sorted(f"{sym} · {name}" if name else str(sym)
@@ -363,8 +373,8 @@ with filters_pop:
         font = st.selectbox("Font", list(ui.FONTS), index=0, key="appearance_font")
         density = st.radio("Table density", ["Comfortable", "Compact"], horizontal=True,
                            key="appearance_density")
-        st.caption("Light / dark: open the ⋮ menu (top right) → Settings → Theme. "
-                   "The app follows your device by default.")
+        st.caption("Use the ☀️ / 🌙 switch in the header to change the whole app's "
+                   "theme instantly — including charts and tables.")
     st.divider()
     st.caption(f"Prices as of **{as_of.date()}**  \nUpdated {fetched_at:%d %b %Y, %H:%M} IST  \n" +
                ("Refreshed automatically every weekday evening (~5 pm IST)" if mode == "saved"

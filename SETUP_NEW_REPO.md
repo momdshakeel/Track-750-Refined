@@ -89,6 +89,11 @@ Leave it unset to stay local-first. The old hard-coded `momdshakeel/Track500` UR
 
 ## 5. What changed in this local copy
 
+- **Full visual refresh:** new pulse-logo header card with cyan/violet gradients, redesigned KPI stat
+  cards with icon badges and hover lift, capsule-style screen tabs, restyled status pills, meters,
+  buttons and sidebar.
+- **In-app light / dark switch:** the ☀️ / 🌙 control in the header recolours the entire app —
+  including the sortable tables and chart dialogs — without using Streamlit's settings menu.
 - **Faster charts:** chart history downloads are cached for 1 hour, so reopening a stock is instant.
   Chart default height reduced from 900 px to 760 px; theme sync interval reduced.
 - **Better mobile layout:** all native multi-column rows stack on narrow screens, the header/tabs/
