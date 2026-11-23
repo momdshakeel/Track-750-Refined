@@ -1110,7 +1110,9 @@ def _chart_info(symbol, row, bars, benchmark) -> dict:
         info["stage"] = "" if stage == "nan" else stage
     series = [b["rs"] for b in bars]
     periods = []
-    for label, lookback in (("1M", 21), ("3M", 63), ("6M", 126), ("12M", 252)):
+    # Shortest first so the eye reads latest momentum → longer trend left to right.
+    for label, lookback in (("Today", 1), ("5D", 5), ("15D", 15), ("1M", 21),
+                            ("3M", 63), ("6M", 126), ("12M", 252)):
         old, now = series[max(0, len(series) - 1 - lookback)], series[-1]
         periods.append([label, (now / old - 1) * 100 if old and now else None])
     info["rsPeriods"] = periods
@@ -1340,30 +1342,12 @@ elif active_screen == "chart":
         last_day = datetime.strptime(loaded["dates"][-1], "%Y-%m-%d").date()
         stock_row = result[result["Symbol"].astype(str) == chart_symbol]
         stock_row = stock_row.iloc[0] if not stock_row.empty else None
-        sector_name = str(stock_row.get("Sector", "")) if stock_row is not None else ""
-        st.markdown(f"#### {chart_symbol}　<span style='font-weight:400;opacity:.72'>{names.get(chart_symbol, '')} · {sector_name}</span>", unsafe_allow_html=True)
-        if stock_row is not None:
-            stats = st.columns(4)
-            latest_bar = loaded["bars"][-1]
-            prior_close = loaded["bars"][-2]["close"] if len(loaded["bars"]) > 1 else latest_bar["close"]
-            day_change = (latest_bar["close"] / prior_close - 1) * 100 if prior_close else 0
-            stats[0].metric("Latest close", f"₹{latest_bar['close']:,.2f}", f"{day_change:+.2f}%")
-            stats[1].metric("RS rating", f"{stock_row.get('RS_Rating', '—')}", f"{stock_row.get('RS_Change', 0):+g} vs prior scan")
-            stats[2].metric("Stage", str(stock_row.get("Stage", "—")))
-            benchmark_name = {"^CRSLDX": "Nifty 500", "^NSEI": "Nifty 50 fallback"}.get(loaded["benchmark"], "Unavailable")
-            stats[3].metric("RS benchmark", benchmark_name)
-        rs_bars = [bar["rs"] for bar in loaded["bars"]]
-        rs_cols = st.columns(4)
-        for col, label, lookback in zip(rs_cols, ["1 month RS", "3 month RS", "6 month RS", "12 month RS"], [21, 63, 126, 252]):
-            old_i = max(0, len(rs_bars) - 1 - lookback)
-            old_rs, now_rs = rs_bars[old_i], rs_bars[-1]
-            change = (now_rs / old_rs - 1) * 100 if old_rs and now_rs else None
-            col.metric(label, f"{change:+.1f}%" if change is not None else "Unavailable")
+        info = _chart_info(chart_symbol, stock_row, loaded["bars"], loaded["benchmark"])
         range_default = {"1y": "1Y", "2y": "2Y", "5y": "5Y"}.get(chart_period, "2Y")
         visible_window = range_default  # initial zoom; the chart has its own range buttons
-        # Fully automatic chart: no manual base dates or pivot — only detected bases are drawn.
+        # RS Rating + RS-line changes live in the chart header, so both chart views match.
         ui.chart_explorer(loaded["bars"], chart_symbol, "", "", 0.0,
-                          loaded.get("base_history", []), visible_window=visible_window)
+                          loaded.get("base_history", []), visible_window=visible_window, info=info)
         page_table = _base_table_html(loaded.get("base_history", []))
         if page_table:
             st.markdown(page_table, unsafe_allow_html=True)

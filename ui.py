@@ -733,7 +733,7 @@ function header(){
   if(I.rs!=null)r2+='<span class="lab">RS</span><span class="pill solid" style="--c:#15803d">'+I.rs+'</span>'+(I.rsChange?'<span class="rsd '+(I.rsChange>0?'up':'dn')+'">'+(I.rsChange>0?'+':'')+I.rsChange+'</span>':'');
   if(st)r2+='<span class="pill solid" style="--c:'+sc+'">'+esc(st)+'</span>';
   if(I.sectorBadge)r2+='<span class="pill" style="--c:#2563eb" title="'+esc(I.sector||'')+'">'+esc(I.sectorBadge)+(I.sector?'<span class="sn"> · '+esc(I.sector)+'</span>':'')+'</span>';
-  if(I.rsPeriods&&I.rsPeriods.length)r2+='<span class="rsp"><span class="lab">RS line<span class="long"> vs '+esc(I.benchmark||'index')+'</span></span>'+
+  if(I.rsPeriods&&I.rsPeriods.length)r2+='<span class="rsp"><span class="lab">RS Δ<span class="long"> vs '+esc(I.benchmark||'index')+'</span></span>'+
     I.rsPeriods.map(p=>'<span class="k">'+p[0]+'</span><b class="'+(p[1]==null?'':p[1]>=0?'up':'dn')+'">'+(p[1]==null?'–':sgn(p[1],1)+'%')+'</b>').join('')+'</span>';
   r2+='</div>';
   $('hd').innerHTML=r2;
