@@ -1,6 +1,6 @@
-# Optional: gives sliders, checkboxes and links the app's indigo accent in light AND dark mode.
-# The app works fine without it (accents then stay Streamlit's default red).
-# Light/dark still follows each visitor's device automatically.
+# Optional: gives native widgets a matching accent in both modes.
+# The in-app ☀️ / 🌙 switch in the header controls the full app theme, so these
+# values mainly affect a few built-in widgets before the first rerun.
 [theme.light]
 primaryColor = "#6366f1"
 
