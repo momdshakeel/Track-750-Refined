@@ -77,6 +77,11 @@ section[data-testid="stSidebar"]{background:var(--mp-surface)!important;color:va
 .stApp p,.stApp label,.stApp li,.stApp h1,.stApp h2,.stApp h3,.stApp h4,.stApp td,.stApp th,
 [data-testid="stMarkdownContainer"],.stText,.stCaption,[data-testid="stCaptionContainer"],
 [data-testid="stWidgetLabel"] p{color:var(--mp-text)}
+/* Readable captions / info notes under charts and tables, in both themes */
+.stCaption,[data-testid="stCaptionContainer"],.stCaption p,[data-testid="stCaptionContainer"] p{
+ color:var(--mp-text)!important;font-weight:600!important;font-size:.82rem!important;line-height:1.45!important;opacity:1!important}
+div[data-testid="stAlert"] p,div[data-testid="stAlert"] [data-testid="stMarkdownContainer"]{
+ color:var(--mp-text)!important;font-weight:600!important;opacity:1!important}
 .stApp div,.stApp p,.stApp label,.stApp li,.stApp h1,.stApp h2,.stApp h3,.stApp h4,
 .stApp input,.stApp textarea,.stApp button,.stApp a,.stApp td,.stApp th{font-family:var(--ui-font)!important}
 div[data-baseweb="select"]>div,.stTextInput input,.stNumberInput input,.stTextArea textarea{
