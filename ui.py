@@ -689,15 +689,15 @@ color:var(--c);background:color-mix(in srgb,var(--c) 15%,transparent)}
 #tb{display:flex;flex-direction:column;gap:4px}
 #bar,#chips{display:flex;align-items:center;gap:8px;overflow-x:auto;white-space:nowrap;scrollbar-width:none}
 @media(min-width:1000px){#tb{flex-direction:row;flex-wrap:wrap;align-items:center;gap:6px 6px}#bar,#chips{display:contents}}
-#bar::-webkit-scrollbar,#chips::-webkit-scrollbar,#toolpanel::-webkit-scrollbar{display:none}
-.tools{position:absolute;left:8px;top:8px;z-index:6;display:flex;flex-direction:column;align-items:flex-start;gap:5px}
-.tools #tdraw{border-color:var(--accent);color:var(--accent);font-size:14px;min-width:32px;padding:4px 8px}
+#bar::-webkit-scrollbar,#chips::-webkit-scrollbar{display:none}
+.tools{position:absolute;left:8px;top:8px;bottom:8px;z-index:6;display:flex;flex-direction:column;align-items:flex-start;gap:5px}
+.tools #tdraw{border-color:var(--accent);color:var(--accent);font-size:14px;min-width:32px;padding:3px 8px}
 .tools #tdraw.on{background:var(--accent);color:#fff;border-color:var(--accent)}
-#toolpanel{display:none;flex-direction:column;align-items:stretch;gap:3px;max-height:calc(100% - 46px);overflow-y:auto;white-space:nowrap;scrollbar-width:none;padding:5px;border:1px solid var(--line);border-radius:10px;background:color-mix(in srgb,var(--bg) 94%,transparent);box-shadow:0 8px 24px rgba(0,0,0,.18);backdrop-filter:blur(4px)}
+#toolpanel{display:none;flex:1;min-height:0;flex-direction:column;align-items:stretch;gap:2px;overflow-y:auto;white-space:nowrap;scrollbar-width:thin;scrollbar-color:var(--line) transparent;padding:5px;border:1px solid var(--line);border-radius:10px;background:color-mix(in srgb,var(--bg) 94%,transparent);box-shadow:0 8px 24px rgba(0,0,0,.18);backdrop-filter:blur(4px)}
 .tools.open #toolpanel{display:flex}
-.tools button{flex:none;border:1px solid var(--line);background:transparent;color:inherit;border-radius:7px;font:inherit;font-size:11px;font-weight:700;padding:5px 8px;cursor:pointer;width:150px;text-align:left}
+.tools button{flex:none;border:1px solid var(--line);background:transparent;color:inherit;border-radius:7px;font:inherit;font-size:10.5px;line-height:1.2;font-weight:700;padding:3px 7px;cursor:pointer;width:150px;text-align:left}
 .tools button.on{background:var(--fg);color:var(--bg);border-color:var(--fg)}
-.tools .tsep{width:100%;height:1px;background:var(--line);margin:3px 0;flex:none}
+.tools .tsep{width:100%;height:1px;background:var(--line);margin:2px 0;flex:none}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;flex:none}
 .seg button{border:0;background:transparent;color:inherit;font:inherit;font-weight:600;padding:5px 10px;cursor:pointer;min-width:34px}
 .seg button+button{border-left:1px solid var(--line)}
