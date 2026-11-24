@@ -138,6 +138,7 @@ TIGHTEN_RATIO = 0.90             # each pullback <= 90% of the previous one
 VCP_LAST_MAX = 0.10              # final contraction no deeper than 10%
 VOL_DRYUP_RATIO = 0.80           # last-10-day avg volume <= 80% of the 50-day avg
 VCP_NEAR_PIVOT = 5.0             # "setup" = price 0-5% below the pivot
+VCP_BREAKOUT_RECENT = 5          # a close above the VCP pivot stays "fresh" for this many sessions
 
 # ---- Volume breakout ----
 BREAKOUT_LOOKBACK = 60           # must close above the prior 60-session high
@@ -544,6 +545,25 @@ def pattern_table(prices, ohlcv, idx):
         days_ago = days_ago.where(~ck, k)
         brk_vol = brk_vol.where(~ck, vr.iloc[-1 - k])
 
+    # --- fresh crosses of the VCP pivot (specific to the detected VCP base) ---
+    # A cross is the first close above the VCP pivot on at least 1.5x the 50-day
+    # average volume. The most recent cross inside VCP_BREAKOUT_RECENT wins.
+    vcp_days = pd.Series(np.nan, index=idx)
+    vcp_vol = pd.Series(np.nan, index=idx)
+    vcp_ret = pd.Series(np.nan, index=idx)
+    for col in idx:
+        pv = vcp_pivot.get(col, np.nan)
+        if not np.isfinite(pv) or pv <= 0:
+            continue
+        px, vv = p[col], vr[col]
+        cross = (px > pv) & (px.shift(1) <= pv) & (vv >= BREAKOUT_VOL_X)
+        for k in range(min(VCP_BREAKOUT_RECENT, len(px)) - 1, -1, -1):
+            if bool(cross.iloc[-1 - k]):
+                vcp_days[col] = k
+                vcp_vol[col] = vv.iloc[-1 - k]
+                vcp_ret[col] = (px.iloc[-1] / px.iloc[-1 - k] - 1) * 100
+                break
+
     return pd.DataFrame({
         "Stage": stage["Stage"], "Stage_Num": stage["Stage_Num"],
         "SMA150_Slope_%": stage["SMA150_Slope_%"],
@@ -554,6 +574,8 @@ def pattern_table(prices, ohlcv, idx):
         "VCP_Vol_Contracting": vcp & vcp_vol_ok,
         "Vol_Dry_Up": dry, "VCP_Setup": vcp_setup,
         "Pivot": pivot.round(2), "Pct_To_Pivot": pct_to_pivot,
+        "VCP_Breakout": vcp_days.notna(), "VCP_Breakout_Days_Ago": vcp_days,
+        "VCP_Breakout_Vol_x": vcp_vol.round(2), "VCP_Breakout_Return_%": vcp_ret.round(1),
         "Vol_Breakout": days_ago.notna(), "Breakout_Days_Ago": days_ago,
         "Breakout_Vol_x": brk_vol.round(2), "Vol_x_50d": vol_x_today,
         "Up_Down_Vol_Ratio_20D": up_down_ratio,
@@ -658,7 +680,9 @@ def build_table(prices, bench, meta, ohlcv=None, shares=None):
              "Trend_State", "RS_Excess_3M_%", "RS_Excess_6M_%", "RS_Improving",
              "Volume_Pressure_20D", "Up_Down_Vol_Ratio_20D", "Pct_Above_50SMA", "Extension_State",
              "Weighted_Return_%", "Stage", "TT_Score", "TT_Pass", "Stage1_Base", "VCP",
-             "VCP_Setup", "Vol_Breakout", "Liquid", "Avg_Value_Cr", "Market_Cap_Cr", "RS_Line_New_High", "RS_Line_Near_High",
+             "VCP_Setup", "VCP_Breakout", "VCP_Breakout_Days_Ago", "VCP_Breakout_Vol_x",
+             "VCP_Breakout_Return_%", "Vol_Breakout", "Liquid", "Avg_Value_Cr", "Market_Cap_Cr",
+             "RS_Line_New_High", "RS_Line_Near_High",
              "RS_Blue_Dot", "RS_Line_Uptrend", "RSI14", "Close", "Chg_1D_%", "Pct_From_52W_High",
              "Pct_Above_52W_Low", "SMA50", "SMA150", "SMA200", "Market_Above_10SMA",
              "Market_Above_20SMA", "Market_Trend_OK"]
@@ -1026,7 +1050,8 @@ def main():
     print(blue[show].head(40).to_string(index=False))
 
     pat_cols = ["Symbol", "RS_Rating", "Stage", "VCP_Contractions", "Vol_Dry_Up", "Pivot",
-                "Pct_To_Pivot", "Breakout_Days_Ago", "Breakout_Vol_x", "Base_Days", "Liquid", "Market_Cap_Cr", "Close"]
+                "Pct_To_Pivot", "VCP_Breakout_Days_Ago", "VCP_Breakout_Vol_x", "VCP_Breakout_Return_%",
+                "Breakout_Days_Ago", "Breakout_Vol_x", "Base_Days", "Liquid", "Market_Cap_Cr", "Close"]
     setups = scan[scan.VCP_Setup]
     brk = scan[scan.Vol_Breakout]
     s1 = scan[scan.Stage1_Base].sort_values("Base_Days", ascending=False)

@@ -395,6 +395,7 @@ SPEC = {
     "TT_Score": dict(t="Trend Template", type="tt", pri=2),
     "RS_Line_New_High": dict(t="RS line high", type="chk", pri=3),
     "RS_Line_Near_High": dict(t="RS line near high", type="chk", pri=3),
+    "RS_Line_Uptrend": dict(t="RS line rising", type="chk", pri=3),
     "RS_Blue_Dot": dict(t="Blue dot", type="dot", pri=3),
     "RSI14": dict(t="RSI", type="n1", pri=2),
     "Close": dict(t="Close", type="n2", pri=1),
@@ -411,6 +412,10 @@ SPEC = {
     "VCP_Vol_Contracting": dict(t="Vol shrinking", type="chk", pri=3),
     "Vol_Dry_Up": dict(t="Vol dry-up", type="chk", pri=3),
     "VCP_Setup": dict(t="VCP setup", type="chk", pri=2),
+    "VCP_Breakout": dict(t="VCP breakout", type="chk", pri=2),
+    "VCP_Breakout_Days_Ago": dict(t="VCP breakout · days ago", type="ago", pri=2),
+    "VCP_Breakout_Vol_x": dict(t="VCP breakout vol", type="mult", pri=2),
+    "VCP_Breakout_Return_%": dict(t="Return since VCP breakout", type="spct", pri=2),
     "Pivot": dict(t="Pivot", type="n2", pri=2),
     "Pct_To_Pivot": dict(t="To pivot", type="pct", pri=1),
     "Vol_Breakout": dict(t="Breakout", type="chk", pri=2),
@@ -450,6 +455,10 @@ COLS_PATTERN = ["Symbol", "RS_Rating", "Stage", "TT_Score", "VCP", "VCP_Contract
                 "VCP_Setup", "Pivot", "Pct_To_Pivot", "Close", "Chg_1D_%", "Vol_Breakout", "Breakout_Days_Ago",
                 "Breakout_Vol_x", "Vol_x_50d", "Stage1_Base", "Base_Days", "Base_Depth_%", "Liquid",
                 "Avg_Value_Cr", "Market_Cap_Cr", "Sector", "Company Name"]
+COLS_VCP_BREAKOUT = ["Symbol", "RS_Rating", "Stage", "TT_Score", "VCP_Contractions", "Pivot",
+                     "VCP_Breakout_Days_Ago", "VCP_Breakout_Vol_x", "VCP_Breakout_Return_%",
+                     "Close", "Chg_1D_%", "Pct_Above_50SMA", "RS_Line_Uptrend", "RS_Line_Near_High",
+                     "Vol_x_50d", "Liquid", "Sector", "Company Name"]
 COLS_SECTOR_STRENGTH = ["Rank", "Group", "Sector_Score", "Stocks", "Median_RS", "Avg_RS", "Avg_RS_Change",
                         "Pct_RS80", "Pct_TT_Pass", "Pct_Above_200", "Pct_Stage2", "TT_Pass_Count", "Blue_Dots",
                         "Avg_Weighted_Return_%", "Top_Stocks"]

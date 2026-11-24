@@ -431,6 +431,48 @@ def apply_stock_filters(frame):
     return filtered
 
 
+def _vcp_breakout_frame(frame):
+    """Fresh VCP pivot crosses that are still trending up.
+
+    Uses the dedicated scan columns when available. Older daily snapshots are
+    approximated from the generic breakout fields, so this view never breaks
+    while waiting for the first scan that writes the new columns.
+    """
+    if frame is None or frame.empty:
+        return frame
+    out = frame.copy()
+
+    def num(col):
+        return pd.to_numeric(out[col], errors="coerce") if col in out.columns else pd.Series(np.nan, index=out.index)
+
+    if "VCP_Breakout_Days_Ago" in out.columns:
+        days, vol_x, ret = (num("VCP_Breakout_Days_Ago"), num("VCP_Breakout_Vol_x"),
+                            num("VCP_Breakout_Return_%"))
+    else:
+        vcp = out.get("VCP", pd.Series(False, index=out.index)).fillna(False).astype(bool)
+        above = num("Pct_To_Pivot") < 0
+        brk = out.get("Vol_Breakout", pd.Series(False, index=out.index)).fillna(False).astype(bool)
+        days = num("Breakout_Days_Ago").where(vcp & above & brk)
+        vol_x = num("Breakout_Vol_x")
+        pivot, close = num("Pivot"), num("Close")
+        ret = ((close / pivot - 1) * 100).where(pivot > 0)
+    out["VCP_Breakout_Days_Ago"] = days
+    out["VCP_Breakout_Vol_x"] = vol_x
+    out["VCP_Breakout_Return_%"] = ret
+
+    fresh = days.notna() & (days <= getattr(m, "VCP_BREAKOUT_RECENT", 5))
+    # Pct_To_Pivot is pivot/close - 1, so a negative value means price is above the pivot.
+    pivot_pct = num("Pct_To_Pivot")
+    above_pivot = pivot_pct < 0 if pivot_pct.notna().any() else (num("Close") > num("Pivot"))
+    stage2 = num("Stage_Num") == 2
+    rs_up = out.get("RS_Line_Uptrend", pd.Series(False, index=out.index)).fillna(False).astype(bool)
+    above50 = num("Pct_Above_50SMA") > 0
+    out = out.assign(_rs_sort=num("RS_Rating"))
+    return (out[fresh & above_pivot & stage2 & rs_up & above50]
+            .sort_values(["VCP_Breakout_Days_Ago", "_rs_sort"], ascending=[True, False])
+            .drop(columns="_rs_sort"))
+
+
 df = apply_stock_filters(result)
 
 top = df[df.TT_Pass & (df.RS_Rating >= pref_rs) & df.RS_Line_Near_High & (df.RSI14 > rsi_min)]
@@ -1367,15 +1409,36 @@ elif active_screen == "trend":
                                "200 SMA rising, 30% above the 52-week low, within 25% of the 52-week high, "
                                "RS ≥ 70.")
 elif active_screen == "vcp":
+    with v_title:
+        vcp_mode = st.segmented_control(
+            "VCP view", ["Setups", "Recent breakouts"], key="vcp_screen_mode", default="Setups",
+            label_visibility="collapsed",
+            help="Setups = stocks sitting at their pivot. Recent breakouts = VCP pivot crossed on strong volume.",
+        )
     scan_frame, selected_scan_date, history_dates, history_key = select_setup_scan("vcp")
-    historical_vcp = scan_frame[scan_frame.get("VCP_Setup", pd.Series(False, index=scan_frame.index))
-                                .fillna(False).astype(bool)].sort_values("Pct_To_Pivot")
-    show(historical_vcp, "vcp_setups",
-         "<b>Stage 2</b> stocks with 2+ successively tighter pullbacks (last one ≤ 10%), volume dried up over the "
-         f"last 10 days (≤ {int(m.VOL_DRYUP_RATIO * 100)}% of the 50-day average) and price "
-         f"0-{m.VCP_NEAR_PIVOT:.0f}% below the <b>pivot</b>. Watch for a close above the pivot on heavy "
-         "volume. Closest to pivot first.", ui.COLS_PATTERN, ("Pct_To_Pivot", 1),
-         scan_date=selected_scan_date, history_dates=history_dates, history_key=history_key)
+    if vcp_mode == "Recent breakouts":
+        SCREEN_DESCRIPTIONS["vcp"] = "Fresh VCP pivot crosses that are still holding above the pivot in an uptrend."
+        historical_vcp = _vcp_breakout_frame(scan_frame)
+        if historical_vcp.empty:
+            st.info("No fresh VCP breakouts in this scan. Check **Setups** for stocks sitting at their pivot.")
+        show(historical_vcp, "vcp_breakouts",
+             "<b>Fresh VCP breakouts</b>: the stock closed above its detected <b>VCP pivot</b> on at least "
+             f"<b>{m.BREAKOUT_VOL_X}× the 50-day average volume</b> within the last {m.VCP_BREAKOUT_RECENT} "
+             "sessions, and is still <b>above that pivot</b>, in <b>Stage 2</b>, with a rising RS line and price "
+             "above its 50-day average. Sorted by most recent breakout first. Raise <b>Minimum RS Rating</b> in "
+             "Filters to keep only top-ranked leaders.",
+             ui.COLS_VCP_BREAKOUT, ("VCP_Breakout_Days_Ago", 1),
+             scan_date=selected_scan_date, history_dates=history_dates, history_key=history_key)
+    else:
+        SCREEN_DESCRIPTIONS["vcp"] = "Tightening bases with quieter volume and price near a possible pivot."
+        historical_vcp = scan_frame[scan_frame.get("VCP_Setup", pd.Series(False, index=scan_frame.index))
+                                    .fillna(False).astype(bool)].sort_values("Pct_To_Pivot")
+        show(historical_vcp, "vcp_setups",
+             "<b>Stage 2</b> stocks with 2+ successively tighter pullbacks (last one ≤ 10%), volume dried up over the "
+             f"last 10 days (≤ {int(m.VOL_DRYUP_RATIO * 100)}% of the 50-day average) and price "
+             f"0-{m.VCP_NEAR_PIVOT:.0f}% below the <b>pivot</b>. Watch for a close above the pivot on heavy "
+             "volume. Closest to pivot first.", ui.COLS_PATTERN, ("Pct_To_Pivot", 1),
+             scan_date=selected_scan_date, history_dates=history_dates, history_key=history_key)
 elif active_screen == "breakouts":
     scan_frame, selected_scan_date, history_dates, history_key = select_setup_scan("breakouts")
     historical_breakouts = scan_frame[
