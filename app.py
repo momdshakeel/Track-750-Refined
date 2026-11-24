@@ -1852,3 +1852,47 @@ with st.expander("Notes & limitations"):
         f"- RS Line is measured against the Nifty 500 index (Yahoo Finance); Yahoo data can have gaps.\n"
         f"- Educational tool, not investment advice."
     )
+
+with st.expander("Disclaimer & data sources"):
+    st.markdown("""
+    <style>
+    .policy-wrap{border:1px solid var(--mp-line);border-radius:14px;background:var(--mp-surface);
+      padding:18px 20px;box-shadow:0 6px 18px var(--mp-shadow);margin:2px 0 12px}
+    .policy-kicker{text-transform:uppercase;letter-spacing:.12em;font-size:.7rem;font-weight:800;
+      color:var(--mp-accent);margin-bottom:8px}
+    .policy-wrap h4{margin:0 0 9px;font-size:1.05rem;letter-spacing:-.01em}
+    .policy-wrap p,.policy-wrap li{margin:0 0 9px;color:var(--mp-muted);line-height:1.62;font-size:.92rem}
+    .policy-wrap a{color:var(--mp-accent);text-decoration:none;font-weight:700}
+    .policy-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:11px;margin:13px 0}
+    .policy-item{border:1px solid var(--mp-line);border-radius:12px;padding:13px 14px;
+      background:color-mix(in srgb,var(--mp-accent) 5%,var(--mp-surface2))}
+    .policy-item b{display:block;margin-bottom:4px;color:var(--mp-text);font-size:.9rem}
+    .policy-item span{color:var(--mp-muted);font-size:.88rem;line-height:1.55}
+    .policy-note{border-left:3px solid var(--mp-accent);padding:11px 14px;border-radius:0 10px 10px 0;
+      background:color-mix(in srgb,var(--mp-accent) 8%,var(--mp-surface));color:var(--mp-text);line-height:1.62;font-size:.92rem}
+    @media(max-width:700px){.policy-wrap{padding:15px 16px}.policy-wrap h4{font-size:.98rem}
+      .policy-wrap p,.policy-wrap li,.policy-note{font-size:.89rem}}
+    </style>
+    <div class="policy-wrap">
+      <div class="policy-kicker">Website policy</div>
+      <h4>Track-750 — stock screening, charting and market analytics for Indian equities</h4>
+      <p>This website is operated by <a href="mailto:momd.shakeel@gmail.com">momd.shakeel@gmail.com</a>
+      and is hosted at <a href="https://track-750-refined.streamlit.app/">track-750-refined.streamlit.app</a>.</p>
+      <p>Track-750 is for education and research only. It is not investment advice, a research report, or a
+      recommendation to buy, sell or hold any security or fund. We are not registered with SEBI as an investment
+      adviser or research analyst.</p>
+      <div class="policy-grid">
+        <div class="policy-item"><b>Charts</b><span>Technical charts are built with KLineChart, used under the Apache License 2.0.</span></div>
+        <div class="policy-item"><b>Prices</b><span>Daily price data is provided by Yahoo Finance. This is not a live market feed.</span></div>
+        <div class="policy-item"><b>Universe &amp; sectors</b><span>NSE Nifty Total Market constituent list and NSE basic-industry classification.</span></div>
+        <div class="policy-item"><b>Index history</b><span>niftyindices.com index history is used for benchmark context where available.</span></div>
+      </div>
+      <div class="policy-note"><b>Data &amp; performance notice:</b> data is end-of-day, updated after each market close,
+      and is not live. It may be delayed or contain errors, so verify prices and corporate actions with the exchange
+      or another official source before acting. Rankings, screens and backtests are mechanical outputs of rules applied
+      to historical data. Past and backtested performance does not guarantee future results, and backtests carry known
+      limitations such as missing delisted companies, idealised fills, and no taxes or costs.</div>
+      <p style="margin-top:12px"><b>Markets carry risk of loss.</b> Do your own research and consult a SEBI-registered
+      investment adviser before making investment decisions.</p>
+    </div>
+    """, unsafe_allow_html=True)
