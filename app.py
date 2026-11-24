@@ -1095,6 +1095,7 @@ def _chart_info(symbol, row, bars, benchmark) -> dict:
     info = {"symbol": symbol, "company": "", "sector": "", "sectorBadge": "",
             "price": latest["close"], "change": (latest["close"] / prior - 1) * 100 if prior else 0.0,
             "asOf": latest["date"], "rs": None, "rsChange": 0, "stage": "",
+            "ttScore": None, "ttPass": False, "sectorStrength": None,
             "benchmark": {"^CRSLDX": "Nifty 500", "^NSEI": "Nifty 50"}.get(benchmark, "index")}
     if row is not None:
         company, sector = str(row.get("Company Name", "") or ""), str(row.get("Sector", "") or "")
@@ -1102,10 +1103,14 @@ def _chart_info(symbol, row, bars, benchmark) -> dict:
         info["sector"] = "" if sector == "nan" else sector
         rank, strength = _num(row, "Sector_Rank"), _num(row, "Sector_Strength")
         if rank is not None:
-            info["sectorBadge"] = f"Sector #{int(rank)}" + (f" · {int(strength)}" if strength is not None else "")
+            info["sectorBadge"] = f"Sector #{int(rank)}"
+        info["sectorStrength"] = None if strength is None else int(strength)
         rs, change = _num(row, "RS_Rating"), _num(row, "RS_Change", 0)
         info["rs"] = None if rs is None else int(rs)
         info["rsChange"] = int(change or 0)
+        tt_score, tt_pass = _num(row, "TT_Score"), bool(row.get("TT_Pass", False))
+        info["ttScore"] = None if tt_score is None else int(tt_score)
+        info["ttPass"] = tt_pass
         stage = str(row.get("Stage", "") or "")
         info["stage"] = "" if stage == "nan" else stage
     series = [b["rs"] for b in bars]

@@ -731,7 +731,9 @@ function header(){
   const sc={1:'#64748b',2:'#15803d',3:'#d97706',4:'#dc2626'}[sn]||'#64748b';
   let r2='<div class="r"><span class="px">'+fmt(I.price).replace(/\.00$/,'')+'</span><span class="chg '+(up?'up':'dn')+'">'+sgn(I.change,2)+'%<span class="asof">'+(I.asOf?' on '+esc(I.asOf):'')+'</span></span>';
   if(I.rs!=null)r2+='<span class="lab">RS</span><span class="pill solid" style="--c:#15803d">'+I.rs+'</span>'+(I.rsChange?'<span class="rsd '+(I.rsChange>0?'up':'dn')+'">'+(I.rsChange>0?'+':'')+I.rsChange+'</span>':'');
+  if(I.ttScore!=null)r2+='<span class="pill'+(I.ttPass?' solid':'')+'" style="--c:'+(I.ttPass?'#059669':'#d97706')+'" title="Minervini Trend Template: 8 price/volume conditions. All 8 must pass.">TT '+I.ttScore+'/8'+(I.ttPass?' ✓':'')+'</span>';
   if(st)r2+='<span class="pill solid" style="--c:'+sc+'">'+esc(st)+'</span>';
+  if(I.sectorStrength!=null)r2+='<span class="pill" style="--c:#7c3aed" title="Sector strength score (1-99): blended median RS, share of RS>=80 leaders and Trend Template pass rate."><span class="long">Sector strength </span>Sec '+I.sectorStrength+'</span>';
   if(I.sectorBadge)r2+='<span class="pill" style="--c:#2563eb" title="'+esc(I.sector||'')+'">'+esc(I.sectorBadge)+(I.sector?'<span class="sn"> · '+esc(I.sector)+'</span>':'')+'</span>';
   if(I.rsPeriods&&I.rsPeriods.length)r2+='<span class="rsp"><span class="lab">RS Δ<span class="long"> vs '+esc(I.benchmark||'index')+'</span></span>'+
     I.rsPeriods.map(p=>'<span class="k">'+p[0]+'</span><b class="'+(p[1]==null?'':p[1]>=0?'up':'dn')+'">'+(p[1]==null?'–':sgn(p[1],1)+'%')+'</b>').join('')+'</span>';
