@@ -1062,6 +1062,9 @@ z-index:60;box-shadow:0 6px 18px rgba(0,0,0,.3);cursor:default}
 .mp-bt .tip .ln{display:block;margin-top:5px}.mp-bt .tip b{display:block;font-size:.76rem;color:#fff}
 .mp-bt th:last-child .tip{left:auto;right:-6px;transform:none}
 .mp-bt .fail{color:var(--mp-bad);font-weight:800}.mp-bt .form{color:var(--mp-accent);font-weight:800}.mp-bt .hold{color:var(--mp-good);font-weight:800}
+.mp-bt .vcpnote{margin:0 0 8px;padding:7px 10px;border-left:3px solid var(--mp-accent);border-radius:6px;
+background:var(--mp-surface2);color:var(--mp-text);font-size:.78rem;font-weight:600;line-height:1.4}
+.mp-bt .vcpnote b{color:var(--mp-accent);font-weight:800}
 .mp-bt .note{margin:6px 0 0;font-size:.74rem;opacity:1;line-height:1.4;color:var(--mp-text);font-weight:600}
 .mp-bt .note b{color:var(--mp-text);font-weight:800}
 .mp-bt .mob{display:none}
@@ -1080,7 +1083,7 @@ z-index:60;box-shadow:0 6px 18px rgba(0,0,0,.3);cursor:default}
 </style>"""
 
 
-def _base_table_html(records) -> str:
+def _base_table_html(records, vcp_pivot=None, vcp_contractions="") -> str:
     """The 'Base history' card: one row per base, newest first (numbers match the chart circles)."""
     rows = []
     for r in records:
@@ -1096,7 +1099,7 @@ def _base_table_html(records) -> str:
         rows.append(
             f'<tr><td data-l="Base">{_esc(str(r["Base"]))}</td><td data-l="Started">{_esc(str(r["Started"]))}</td>'
             f'<td data-l="Length">{_esc(str(r["Length"]))}</td><td data-l="Depth">{_esc(str(r["Depth"]))}</td>'
-            f'<td data-l="Pivot">{_esc(str(r["Pivot"]))}</td><td data-l="Breakout">{_esc(str(r["Breakout"]))}</td>'
+            f'<td data-l="Base pivot">{_esc(str(r["Pivot"]))}</td><td data-l="Breakout">{_esc(str(r["Breakout"]))}</td>'
             f'<td data-l="Volume">{_esc(str(r["Volume"]))}</td><td data-l="Then">{then_html}</td></tr>')
     if not rows:
         return ""
@@ -1106,18 +1109,26 @@ def _base_table_html(records) -> str:
     head = ('<thead><tr><th>Base' + tip("A pause in the uptrend before the next advance. B-numbers match the circles on the chart "
                                         "(B1 is the oldest). Started is the date of the base's left-side high.") + '</th>'
             '<th>Started</th><th>Length</th><th>Depth</th>'
-            '<th>Pivot' + tip("The base's highest price and the buy point. A close above it is the breakout. "
-                              "For a forming base it is the level price still has to clear.") + '</th>'
+            '<th>Base pivot' + tip("The base history's highest price and buy point. A close above it is the breakout. "
+                                   "This is separate from the VCP pivot shown in the chart header and VCP screen: the "
+                                   "VCP pivot is the high of the last tightening leg and can be lower.") + '</th>'
             '<th>Breakout</th>'
             '<th>Volume' + tip("Breakout-day volume divided by the 50-day average volume (2.0× means twice the usual volume). "
                                "Strong breakouts are usually 1.5× or more; below 1× lacked volume support.") + '</th>'
             '<th>Then' + tip("What happened after the breakout. Click the i on a row for the exact reason and the numbers to check on the chart.") + '</th></tr></thead>')
+    vcp_note = ""
+    if vcp_pivot is not None:
+        legs = f" · pullbacks {_esc(str(vcp_contractions))}" if vcp_contractions else ""
+        vcp_note = (f'<p class="vcpnote"><b>VCP pivot {_fmt_price(float(vcp_pivot))}{legs}</b> '
+                    'is from the VCP scan’s last tightening leg. The <b>Base pivot</b> column below is the broader '
+                    'chart base high. They are different measurements, so both are shown separately.</p>')
     return (_BASE_TABLE_CSS + '<div class="mp-bt"><h4>Base history<small>last 12 months · newest first</small></h4>'
+            + vcp_note +
             f'<table>{head}<tbody>{"".join(rows)}</tbody></table>'
-            '<p class="note mob">Pivot = the base high (the breakout level). Volume = breakout-day volume vs its 50-day average.</p>'
-            '<p class="note"><b>Forming</b> = no close above the pivot yet. <b>Holding</b> = since the breakout, price has not closed '
-            '8% under the pivot or below its 50-day average. <b>Failed</b> = it did, on the date shown (the first such close). '
-            '<b>Best</b> = the highest price after the breakout (before any failure) vs the pivot. Click the i beside a result '
+            '<p class="note mob">Base pivot = the base high (the breakout level). Volume = breakout-day volume vs its 50-day average.</p>'
+            '<p class="note"><b>Forming</b> = no close above the base pivot yet. <b>Holding</b> = since the breakout, price has not closed '
+            '8% under the base pivot or below its 50-day average. <b>Failed</b> = it did, on the date shown (the first such close). '
+            '<b>Best</b> = the highest price after the breakout (before any failure) vs the base pivot. Click the i beside a result '
             'for the exact numbers. Bases follow the chart\'s Bases indicator. History, not a forecast.</p></div>')
 
 
@@ -1139,6 +1150,7 @@ def _chart_info(symbol, row, bars, benchmark) -> dict:
             "price": latest["close"], "change": (latest["close"] / prior - 1) * 100 if prior else 0.0,
             "asOf": latest["date"], "rs": None, "rsChange": 0, "stage": "",
             "ttScore": None, "ttPass": False, "sectorStrength": None,
+            "vcpPivot": None, "vcpContractions": "",
             "benchmark": {"^CRSLDX": "Nifty 500", "^NSEI": "Nifty 50"}.get(benchmark, "index")}
     if row is not None:
         company, sector = str(row.get("Company Name", "") or ""), str(row.get("Sector", "") or "")
@@ -1156,6 +1168,12 @@ def _chart_info(symbol, row, bars, benchmark) -> dict:
         info["ttPass"] = tt_pass
         stage = str(row.get("Stage", "") or "")
         info["stage"] = "" if stage == "nan" else stage
+        vcp_flag = str(row.get("VCP", False)).strip().lower() in {"true", "1", "yes"}
+        if vcp_flag:
+            vcp_pivot = _num(row, "Pivot")
+            info["vcpPivot"] = None if vcp_pivot is None else round(vcp_pivot, 2)
+            contractions = str(row.get("VCP_Contractions", "") or "")
+            info["vcpContractions"] = "" if contractions == "nan" else contractions
     series = [b["rs"] for b in bars]
     periods = []
     # Shortest first so the eye reads latest momentum → longer trend left to right.
@@ -1195,7 +1213,8 @@ def _show_symbol_chart_dialog(symbol: str) -> None:
               "may contain errors · research and education only")
 
     chart_slot = st.container()   # filled below the auto-detected base table
-    table_html = _base_table_html(payload["base_history"])
+    table_html = _base_table_html(payload["base_history"], vcp_pivot=info.get("vcpPivot"),
+                                  vcp_contractions=info.get("vcpContractions", ""))
     if table_html:
         st.markdown(table_html, unsafe_allow_html=True)
     else:
@@ -1396,7 +1415,8 @@ elif active_screen == "chart":
         # RS Rating + RS-line changes live in the chart header, so both chart views match.
         ui.chart_explorer(loaded["bars"], chart_symbol, "", "", 0.0,
                           loaded.get("base_history", []), visible_window=visible_window, info=info)
-        page_table = _base_table_html(loaded.get("base_history", []))
+        page_table = _base_table_html(loaded.get("base_history", []), vcp_pivot=info.get("vcpPivot"),
+                                      vcp_contractions=info.get("vcpContractions", ""))
         if page_table:
             st.markdown(page_table, unsafe_allow_html=True)
         else:
@@ -1428,6 +1448,7 @@ elif active_screen == "vcp":
              "above its 50-day average. Sorted by most recent breakout first. Raise <b>Minimum RS Rating</b> in "
              "Filters to keep only top-ranked leaders.",
              ui.COLS_VCP_BREAKOUT, ("VCP_Breakout_Days_Ago", 1),
+             titles={"Pivot": "VCP pivot"},
              scan_date=selected_scan_date, history_dates=history_dates, history_key=history_key)
     else:
         SCREEN_DESCRIPTIONS["vcp"] = "Tightening bases with quieter volume and price near a possible pivot."
@@ -1438,6 +1459,7 @@ elif active_screen == "vcp":
              f"last 10 days (≤ {int(m.VOL_DRYUP_RATIO * 100)}% of the 50-day average) and price "
              f"0-{m.VCP_NEAR_PIVOT:.0f}% below the <b>pivot</b>. Watch for a close above the pivot on heavy "
              "volume. Closest to pivot first.", ui.COLS_PATTERN, ("Pct_To_Pivot", 1),
+             titles={"Pivot": "VCP pivot", "Pct_To_Pivot": "To VCP pivot"},
              scan_date=selected_scan_date, history_dates=history_dates, history_key=history_key)
 elif active_screen == "breakouts":
     scan_frame, selected_scan_date, history_dates, history_key = select_setup_scan("breakouts")

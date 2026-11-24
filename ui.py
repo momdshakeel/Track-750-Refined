@@ -747,6 +747,8 @@ function header(){
   if(I.rs!=null)r2+='<span class="lab">RS</span><span class="pill solid" style="--c:#15803d">'+I.rs+'</span>'+(I.rsChange?'<span class="rsd '+(I.rsChange>0?'up':'dn')+'">'+(I.rsChange>0?'+':'')+I.rsChange+'</span>':'');
   if(I.ttScore!=null)r2+='<span class="pill'+(I.ttPass?' solid':'')+'" style="--c:'+(I.ttPass?'#059669':'#d97706')+'" title="Minervini Trend Template: 8 price/volume conditions. All 8 must pass.">TT '+I.ttScore+'/8'+(I.ttPass?' ✓':'')+'</span>';
   if(st)r2+='<span class="pill solid" style="--c:'+sc+'">'+esc(st)+'</span>';
+  if(I.vcpPivot!=null)r2+='<span class="pill" style="--c:#0891b2" title="VCP pivot from the scan: the high of the last tightening pullback. It can be lower than the chart Base history pivot, which is the broader base high.">'+
+    '<span class="long">VCP pivot </span>'+fmt(I.vcpPivot).replace(/\.00$/,'')+(I.vcpContractions?'<span class="sn"> · '+esc(I.vcpContractions)+'</span>':'')+'</span>';
   if(I.sectorStrength!=null)r2+='<span class="pill" style="--c:#7c3aed" title="Sector strength score (1-99): blended median RS, share of RS>=80 leaders and Trend Template pass rate."><span class="long">Sector strength </span>Sec '+I.sectorStrength+'</span>';
   if(I.sectorBadge)r2+='<span class="pill" style="--c:#2563eb" title="'+esc(I.sector||'')+'">'+esc(I.sectorBadge)+(I.sector?'<span class="sn"> · '+esc(I.sector)+'</span>':'')+'</span>';
   if(I.rsPeriods&&I.rsPeriods.length)r2+='<span class="rsp"><span class="lab">RS Δ<span class="long"> vs '+esc(I.benchmark||'index')+'</span></span>'+
