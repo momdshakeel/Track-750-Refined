@@ -473,7 +473,120 @@ def _vcp_breakout_frame(frame):
             .drop(columns="_rs_sort"))
 
 
+ENTRY_PRESETS = {
+    "Strict":   dict(rs=80, tt=7, sec=60, ext=12, brk=3, pivot=5),
+    "Balanced": dict(rs=80, tt=6, sec=55, ext=15, brk=5, pivot=5),
+    "Relaxed":  dict(rs=75, tt=6, sec=50, ext=18, brk=5, pivot=7),
+}
+
+
+def _entry_candidates(frame, preset):
+    """Quality leaders at a usable entry point, scored on trend, sector, timing and risk."""
+    if frame is None or frame.empty:
+        return frame
+    cfg = ENTRY_PRESETS.get(preset, ENTRY_PRESETS["Balanced"])
+    out = frame.copy()
+    idx = out.index
+
+    def num(col):
+        return pd.to_numeric(out[col], errors="coerce") if col in out.columns else pd.Series(np.nan, index=idx)
+
+    def flag(col):
+        if col not in out.columns:
+            return pd.Series(False, index=idx)
+        series = out[col]
+        if pd.api.types.is_bool_dtype(series):
+            return series.fillna(False).astype(bool)
+        return series.astype(str).str.strip().str.lower().isin({"true", "1", "1.0", "yes"}).fillna(False)
+
+    market_ok = bool(flag("Market_Trend_OK").all()) if "Market_Trend_OK" in out.columns else True
+    rs, tt, sec = num("RS_Rating"), num("TT_Score"), num("Sector_Strength")
+    above50, pct = num("Pct_Above_50SMA"), num("Pct_To_Pivot")
+    vol_min = getattr(m, "BREAKOUT_VOL_X", 1.5)
+
+    # Fresh breakout: dedicated VCP cross when available, otherwise the generic volume breakout.
+    vcp_days = num("VCP_Breakout_Days_Ago") if "VCP_Breakout_Days_Ago" in out.columns else pd.Series(np.nan, index=idx)
+    gen_days = num("Breakout_Days_Ago")
+    vol_x = num("Breakout_Vol_x").fillna(num("VCP_Breakout_Vol_x"))
+    vcp_fresh = vcp_days.notna() & (vcp_days <= cfg["brk"]) & (pct < 0) & (vol_x >= vol_min)
+    gen_fresh = (gen_days.notna() & (gen_days <= cfg["brk"]) & flag("Vol_Breakout")
+                 & (vol_x >= vol_min) & ~(pct.notna() & (pct >= 0)))
+    break_days = vcp_days.where(vcp_fresh, gen_days.where(gen_fresh))
+    fresh = break_days.notna()
+
+    # At pivot: price still below but within the pivot zone, with quiet/contracting volume.
+    dry = (flag("VCP_Setup") | flag("Vol_Dry_Up") | flag("VCP") | flag("VCP_Vol_Contracting"))
+    at_pivot = (pct >= 0) & (pct <= cfg["pivot"]) & dry
+
+    quality = (flag("Liquid") & (num("Stage_Num") == 2) & (rs >= cfg["rs"]) & (tt >= cfg["tt"])
+               & (sec >= cfg["sec"]) & (above50 > 0) & (above50 <= cfg["ext"]) & flag("RS_Line_Uptrend"))
+    keep = quality & (fresh | at_pivot) & market_ok
+
+    # Transparent 0-100 score: leader quality 60, entry position 20, volume 10, RS momentum 10.
+    score = pd.Series(np.select(
+        [rs >= 90, rs >= 85, rs >= 80, rs >= 75], [25, 20, 15, 10], default=0), index=idx, dtype=float)
+    score += pd.Series(np.select([tt >= 8, tt >= 7, tt >= 6], [20, 15, 10], default=0), index=idx)
+    score += pd.Series(np.select([sec >= 80, sec >= 70, sec >= 60, sec >= 50],
+                                 [15, 12, 8, 5], default=0), index=idx)
+
+    position = pd.Series(0.0, index=idx)
+    position[fresh & (break_days <= 1)] = 20
+    position[fresh & (break_days > 1) & (break_days <= 3)] = 17
+    position[fresh & (break_days > 3)] = 12
+    position[at_pivot & (pct <= 2)] = 20
+    position[at_pivot & (pct > 2) & (pct <= 3.5)] = 16
+    position[at_pivot & (pct > 3.5)] = 12
+    score += position
+
+    vol_score = pd.Series(0.0, index=idx)
+    vol_score[fresh & (vol_x >= 2.0)] = 10
+    vol_score[fresh & (vol_x >= vol_min) & (vol_x < 2.0)] = 8
+    vol_score[fresh & vol_score.eq(0)] = 4
+    vol_score[at_pivot & (flag("VCP_Vol_Contracting") | flag("Vol_Dry_Up"))] = 8
+    pressure = out.get("Volume_Pressure_20D", pd.Series("", index=idx)).astype(str)
+    up_pressure = at_pivot & pressure.str.contains("Up-volume", na=False)
+    vol_score[up_pressure] = np.maximum(vol_score[up_pressure], 6)
+    score += vol_score
+
+    hits = (flag("RS_Improving").astype(int) + (num("RS_Excess_3M_%") > 0).astype(int)
+            + (num("RS_Change") > 0).astype(int))
+    score += hits.map({3: 10.0, 2: 6.0, 1: 3.0, 0: 0.0}).fillna(0.0)
+    # Extension risk: a stock can pass the hard limit yet still be a poor chase.
+    score -= pd.Series(np.select([above50 > 15, above50 > 12, above50 > 9],
+                                 [10, 6, 3], default=0), index=idx)
+
+    close, pivot, sma50 = num("Close"), num("Pivot"), num("SMA50")
+    stop = (pivot * 0.92).where(pivot > 0, sma50 * 0.95)
+    stop_dist = ((close - stop) / close * 100).where((close > 0) & (stop > 0)).clip(0, 25).round(1)
+
+    reasons = []
+    for sym in idx:
+        bits = []
+        if bool(fresh.loc[sym]):
+            label = "VCP breakout" if bool(vcp_fresh.loc[sym]) else "Breakout"
+            day = break_days.loc[sym]
+            bits.append(f"{label} {int(day)}d ago" if pd.notna(day) else label)
+            if pd.notna(vol_x.loc[sym]):
+                bits.append(f"{vol_x.loc[sym]:.1f}× vol")
+        else:
+            gap = pct.loc[sym]
+            bits.append(f"{gap:.1f}% to pivot" if pd.notna(gap) else "near pivot")
+            if bool(dry.loc[sym]):
+                bits.append("dry volume")
+        for value, label in ((rs.loc[sym], "RS"), (tt.loc[sym], "TT"), (sec.loc[sym], "Sec")):
+            if pd.notna(value):
+                bits.append(f"{label} {int(value)}" + ("/8" if label == "TT" else ""))
+        reasons.append(" · ".join(bits))
+
+    out["Entry_Score"] = score.round().clip(0, 100).astype(int)
+    out["Entry_Type"] = np.select([fresh, at_pivot], ["Fresh breakout", "At pivot"], default="")
+    out["Stop_Distance_%"] = stop_dist
+    out["Entry_Reason"] = reasons
+    return out.loc[keep].sort_values(["Entry_Score", "RS_Rating"], ascending=[False, False])
+
+
 df = apply_stock_filters(result)
+entry_candidates = _entry_candidates(df, st.session_state.get("entry_preset", "Balanced"))
 
 top = df[df.TT_Pass & (df.RS_Rating >= pref_rs) & df.RS_Line_Near_High & (df.RSI14 > rsi_min)]
 tt = df[df.TT_Pass]
@@ -1247,6 +1360,7 @@ SCREEN_TABS = {
     "Momentum Leader": "momentum",
     "Trend Template": "trend",
     "VCP Setup": "vcp",
+    "Entry Candidates": "entry",
     "Volume Breakout": "breakouts",
     "Stage 1 Bases": "bases",
     "RS Blue Dot": "blue_dot",
@@ -1259,6 +1373,7 @@ SCREEN_DESCRIPTIONS = {
     "momentum": "A staged shortlist near a possible breakout, with explicit market, trend, base, RS and chart-review checks.",
     "trend": "Stocks meeting all eight Minervini Trend Template conditions.",
     "vcp": "Tightening bases with quieter volume and price near a possible pivot.",
+    "entry": "Quality leaders at a usable entry point, scored on trend, sector, timing and risk.",
     "breakouts": "Recent price breakouts supported by elevated volume.",
     "bases": "Early sideways bases around a flat long-term moving average.",
     "blue_dot": "Stocks whose relative-strength line leads price to a 52-week high.",
@@ -1461,6 +1576,30 @@ elif active_screen == "vcp":
              "volume. Closest to pivot first.", ui.COLS_PATTERN, ("Pct_To_Pivot", 1),
              titles={"Pivot": "VCP pivot", "Pct_To_Pivot": "To VCP pivot"},
              scan_date=selected_scan_date, history_dates=history_dates, history_key=history_key)
+elif active_screen == "entry":
+    with v_title:
+        entry_preset = st.segmented_control(
+            "Entry preset", list(ENTRY_PRESETS), key="entry_preset", default="Balanced",
+            label_visibility="collapsed",
+            help="Strict = highest quality and tightest timing. Relaxed = more names, looser quality and risk limits.",
+        )
+    cfg = ENTRY_PRESETS[entry_preset]
+    market_gate = (bool(result["Market_Trend_OK"].fillna(False).astype(bool).all())
+                   if "Market_Trend_OK" in result.columns else True)
+    if not market_gate:
+        st.warning("Market gate failed: the scan benchmark is below its 10-day or 20-day average. "
+                   "New entry candidates are paused until it recovers.")
+    show(entry_candidates, "entry_candidates",
+         f"<b>Entry Candidates</b> combines leader quality, sector strength, a fresh entry point and extension risk "
+         f"into one ranked shortlist. Preset: <b>{entry_preset}</b> — RS ≥ {cfg['rs']}, Trend Template ≥ {cfg['tt']}/8, "
+         f"sector strength ≥ {cfg['sec']}, no more than {cfg['ext']}% above the 50-day average, and either within "
+         f"{cfg['pivot']}% of the pivot or a breakout no older than {cfg['brk']} sessions. "
+         "Score = leader quality 60 + entry position 20 + volume 10 + RS momentum 10, less an extension penalty. "
+         "Continue sorting by score, then confirm on the chart.",
+         ui.COLS_ENTRY, ("Entry_Score", -1),
+         titles={"Pivot": "Entry pivot", "Pct_To_Pivot": "To pivot",
+                 "Stop_Distance_%": "Stop %", "Entry_Reason": "Why"},
+         scan_date=None)
 elif active_screen == "breakouts":
     scan_frame, selected_scan_date, history_dates, history_key = select_setup_scan("breakouts")
     historical_breakouts = scan_frame[
@@ -1590,6 +1729,9 @@ else:
         st.markdown(f"""<div class="guide-card"><h4>VCP setups</h4><p>Possible volatility contraction patterns:
         successively tighter pullbacks with quieter volume, with price near a marked pivot. The pivot is a level
         to watch; wait for chart confirmation rather than treating proximity as a signal.</p></div>
+        <div class="guide-card"><h4>Entry candidates</h4><p>A ranked shortlist combining RS, Trend Template, sector
+        strength, a fresh pivot/breakout, volume and extension risk. Use Strict, Balanced or Relaxed to control how
+        selective the list is, then confirm the chart and risk level before acting.</p></div>
         <div class="guide-card"><h4>Stage 1 bases</h4><p>Stocks around a flat 150-day average with a sideways base.
         These are early watch-list candidates; the scanner does not call a base a confirmed uptrend.</p></div>""",
                     unsafe_allow_html=True)

@@ -416,6 +416,10 @@ SPEC = {
     "VCP_Breakout_Days_Ago": dict(t="VCP breakout · days ago", type="ago", pri=2),
     "VCP_Breakout_Vol_x": dict(t="VCP breakout vol", type="mult", pri=2),
     "VCP_Breakout_Return_%": dict(t="Return since VCP breakout", type="spct", pri=2),
+    "Entry_Score": dict(t="Entry score", type="bar", pri=1),
+    "Entry_Type": dict(t="Entry type", type="text", pri=1, left=True),
+    "Entry_Reason": dict(t="Why it scored", type="txt", pri=2, left=True),
+    "Stop_Distance_%": dict(t="Stop distance", type="pct", pri=2),
     "Pivot": dict(t="Pivot", type="n2", pri=2),
     "Pct_To_Pivot": dict(t="To pivot", type="pct", pri=1),
     "Vol_Breakout": dict(t="Breakout", type="chk", pri=2),
@@ -459,6 +463,11 @@ COLS_VCP_BREAKOUT = ["Symbol", "RS_Rating", "Stage", "TT_Score", "VCP_Contractio
                      "VCP_Breakout_Days_Ago", "VCP_Breakout_Vol_x", "VCP_Breakout_Return_%",
                      "Close", "Chg_1D_%", "Pct_Above_50SMA", "RS_Line_Uptrend", "RS_Line_Near_High",
                      "Vol_x_50d", "Liquid", "Sector", "Company Name"]
+COLS_ENTRY = ["Symbol", "Entry_Score", "Entry_Type", "RS_Rating", "TT_Score", "Sector_Strength",
+              "Sector_Rank", "Pivot", "Pct_To_Pivot", "Breakout_Days_Ago", "Breakout_Vol_x",
+              "VCP_Breakout_Days_Ago", "VCP_Breakout_Vol_x", "Pct_Above_50SMA", "Extension_State",
+              "Stop_Distance_%", "RS_Change", "RS_Excess_3M_%", "RS_Improving", "Volume_Pressure_20D",
+              "VCP_Contractions", "Entry_Reason", "Stage", "Close", "Chg_1D_%", "Sector", "Company Name"]
 COLS_SECTOR_STRENGTH = ["Rank", "Group", "Sector_Score", "Stocks", "Median_RS", "Avg_RS", "Avg_RS_Change",
                         "Pct_RS80", "Pct_TT_Pass", "Pct_Above_200", "Pct_Stage2", "TT_Pass_Count", "Blue_Dots",
                         "Avg_Weighted_Return_%", "Top_Stocks"]
