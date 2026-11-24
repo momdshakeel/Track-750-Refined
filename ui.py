@@ -690,14 +690,14 @@ color:var(--c);background:color-mix(in srgb,var(--c) 15%,transparent)}
 #bar,#chips{display:flex;align-items:center;gap:8px;overflow-x:auto;white-space:nowrap;scrollbar-width:none}
 @media(min-width:1000px){#tb{flex-direction:row;flex-wrap:wrap;align-items:center;gap:6px 6px}#bar,#chips{display:contents}}
 #bar::-webkit-scrollbar,#chips::-webkit-scrollbar,#toolpanel::-webkit-scrollbar{display:none}
-.tools{display:flex;align-items:center;gap:5px;flex:none}
+.tools{position:absolute;left:8px;top:8px;z-index:6;display:flex;flex-direction:column;align-items:flex-start;gap:5px}
 .tools #tdraw{border-color:var(--accent);color:var(--accent);font-size:14px;min-width:32px;padding:4px 8px}
 .tools #tdraw.on{background:var(--accent);color:#fff;border-color:var(--accent)}
-#toolpanel{display:none;align-items:center;gap:5px;overflow-x:auto;white-space:nowrap;scrollbar-width:none;max-width:min(74vw,860px)}
+#toolpanel{display:none;flex-direction:column;align-items:stretch;gap:3px;max-height:calc(100% - 46px);overflow-y:auto;white-space:nowrap;scrollbar-width:none;padding:5px;border:1px solid var(--line);border-radius:10px;background:color-mix(in srgb,var(--bg) 94%,transparent);box-shadow:0 8px 24px rgba(0,0,0,.18);backdrop-filter:blur(4px)}
 .tools.open #toolpanel{display:flex}
-.tools button{flex:none;border:1px solid var(--line);background:transparent;color:inherit;border-radius:7px;font:inherit;font-size:11px;font-weight:700;padding:4px 8px;cursor:pointer;min-width:28px}
+.tools button{flex:none;border:1px solid var(--line);background:transparent;color:inherit;border-radius:7px;font:inherit;font-size:11px;font-weight:700;padding:5px 8px;cursor:pointer;width:150px;text-align:left}
 .tools button.on{background:var(--fg);color:var(--bg);border-color:var(--fg)}
-.tools .tsep{width:1px;height:18px;background:var(--line);margin:0 2px;flex:none}
+.tools .tsep{width:100%;height:1px;background:var(--line);margin:3px 0;flex:none}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;flex:none}
 .seg button{border:0;background:transparent;color:inherit;font:inherit;font-weight:600;padding:5px 10px;cursor:pointer;min-width:34px}
 .seg button+button{border-left:1px solid var(--line)}
@@ -712,13 +712,13 @@ background:transparent;color:inherit;font:inherit;font-size:11px;padding:3px 7px
 .chip.on{opacity:1;background:var(--soft)}
 #wrap{position:relative;flex:1;min-height:240px}
 #chart{position:absolute;inset:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;touch-action:none}
-#lg{position:absolute;left:10px;top:7px;z-index:3;pointer-events:none;font-size:11.5px;line-height:1.5;max-width:calc(100% - 90px)}
+#lg{position:absolute;right:10px;top:7px;z-index:3;pointer-events:none;font-size:11.5px;line-height:1.5;max-width:calc(100% - 180px);text-align:right}
 #lg .m{opacity:.6;margin-left:6px}#lg .dt{font-weight:600;margin-right:4px}
 #lg .hl{color:#2563eb;font-weight:600}
 #ft{font-size:10.5px;opacity:.6;text-align:right}
 .err{padding:16px;opacity:.75}
 @media(max-width:1149px){.sn{display:none}}
-@media(max-width:560px){.sym{font-size:20px}.px{font-size:21px}.co{font-size:13px}.sub,.asof,.long,.sn,#lg .hl,#lg .dt{display:none}.seg button{padding:5px 8px;min-width:30px}#lg{font-size:10px;max-width:calc(100% - 70px)}#lg .m{margin-left:4px}.r{gap:6px}#hd{gap:4px}}
+@media(max-width:560px){.sym{font-size:20px}.px{font-size:21px}.co{font-size:13px}.sub,.asof,.long,.sn,#lg .hl,#lg .dt{display:none}.seg button{padding:5px 8px;min-width:30px}#lg{font-size:10px;max-width:calc(100% - 160px)}.tools button{width:132px;font-size:10px}#lg .m{margin-left:4px}.r{gap:6px}#hd{gap:4px}}
 </style></head><body>
 <div id="hd"></div>
 <div id="tb">
@@ -738,27 +738,31 @@ background:transparent;color:inherit;font:inherit;font-size:11px;padding:3px 7px
  <button class="chip on" id="t_rs" style="--c:#16a34a" title="Price relative to the benchmark index"><i></i>RS line</button>
  <button class="chip on" id="t_base" style="--c:#3b82f6" title="Detected bases, numbered oldest first"><i class="b"></i>Bases</button>
 </div>
+</div>
+<div id="wrap">
 <div id="tools" class="tools" title="Optional drawing tools. Right-click a drawing to delete it.">
   <button type="button" id="tdraw" title="Open or close drawing tools" aria-expanded="false">✏</button>
   <div id="toolpanel">
-    <button type="button" class="on" data-tool="cursor" title="Cursor — select and move drawings">↖ Cursor</button>
     <button type="button" data-tool="trend" title="Trend line — click start and end">╱ Trend line</button>
-    <button type="button" data-tool="hline" title="Horizontal price line — click once">━ Horizontal</button>
-    <button type="button" data-tool="vline" title="Vertical date line — click once">│ Vertical</button>
+    <button type="button" data-tool="ray" title="Ray — click start and direction">⟍ Ray</button>
+    <button type="button" data-tool="hline" title="Horizontal line — click once">━ Horizontal line</button>
+    <button type="button" data-tool="vline" title="Vertical line — click once">│ Vertical line</button>
+    <button type="button" data-tool="channel" title="Parallel channel — click two edges and width">∥ Parallel channel</button>
+    <button type="button" data-tool="arrow" title="Arrow — click start and end">↗ Arrow</button>
     <button type="button" data-tool="rect" title="Rectangle — click two corners">▭ Rectangle</button>
-    <button type="button" data-tool="fib" title="Fibonacci retracement — click two points">∿ Fibonacci</button>
-    <button type="button" data-tool="measure" title="Measure move — click two points">% Measure</button>
-    <button type="button" data-tool="text" title="Text label — click to place">T Text</button>
     <span class="tsep"></span>
-    <button type="button" id="umag" title="Snap new drawings to nearby candles">⌁ Magnet</button>
+    <button type="button" data-tool="text" title="Text — click to place">T Text</button>
+    <button type="button" data-tool="price" title="Price label — click to place">⌁ Price label</button>
+    <button type="button" data-tool="callout" title="Callout — click to place">▣ Callout</button>
+    <button type="button" data-tool="measure" title="Measure — click two points">% Measure</button>
+    <button type="button" data-tool="daterange" title="Date range — click two dates">▤ Date range</button>
+    <span class="tsep"></span>
     <button type="button" id="uundo" title="Undo (Ctrl+Z)">↶ Undo</button>
     <button type="button" id="uredo" title="Redo (Ctrl+Y)">↷ Redo</button>
-    <button type="button" id="udel" title="Delete the last drawing (right-click any drawing to delete it)">⌫ Delete</button>
-    <button type="button" id="uclear" title="Clear all drawings on this symbol and timeframe">Clear all</button>
+    <button type="button" id="uhide" title="Hide or show your drawings">🙈 Hide drawing</button>
   </div>
 </div>
-</div>
-<div id="wrap"><div id="lg"></div><div id="chart"></div></div>
+<div id="lg"></div><div id="chart"></div></div>
 <div id="ft"></div>
 <script src="__KLINE_SRC__"></script>
 <script>
@@ -772,14 +776,23 @@ const on={s10:true,s20:true,s50:true,s150:true,s200:true,vol:true,rs:true,base:t
 const DRAW_GID='mpDraw';
 const TOOLS={
   trend:{name:'segment',styles:{line:{color:'#f59e0b',size:1.8}}},
+  ray:{name:'rayLine',styles:{line:{color:'#f59e0b',size:1.7}}},
   hline:{name:'horizontalStraightLine',styles:{line:{color:'#f59e0b',size:1.3,style:'dashed',dashedValue:[4,3]},text:{color:'#f59e0b'}}},
   vline:{name:'verticalStraightLine',styles:{line:{color:'#8b5cf6',size:1.3,style:'dashed',dashedValue:[4,3]},text:{color:'#8b5cf6'}}},
-  rect:{name:'mpRect'},fib:{name:'fibonacciLine'},measure:{name:'mpMeasure'},text:{name:'mpText'}
+  channel:{name:'parallelStraightLine',styles:{line:{color:'#0ea5e9',size:1.4}}},
+  arrow:{name:'mpArrow'},
+  rect:{name:'mpRect'},
+  text:{name:'mpText'},
+  price:{name:'mpPrice'},
+  callout:{name:'mpCallout'},
+  measure:{name:'mpMeasure'},
+  daterange:{name:'mpDateRange'}
 };
-const NEED={segment:2,fibonacciLine:2,mpRect:2,mpMeasure:2};
+const NEED={segment:2,rayLine:2,horizontalStraightLine:1,verticalStraightLine:1,parallelStraightLine:3,
+  mpArrow:2,mpRect:2,mpText:1,mpPrice:1,mpCallout:2,mpMeasure:2,mpDateRange:2};
 const needPts=n=>NEED[n]||1;
 let chart=null,tf='D',rng=RLIST.includes(P.range)?P.range:'1Y',data=P.bars,dark=false,rsBase=0,pal={};
-let magnetOn=false,activeTool='cursor',hist=[],future=[],lastSnap='';
+let drawHidden=false,activeTool=null,hist=[],future=[],lastSnap='';
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt=v=>v==null?'–':Number(v).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
 const sgn=(v,d=1)=>(v>=0?'+':'−')+Math.abs(v).toFixed(d);
@@ -879,8 +892,11 @@ const dropInd=k=>chart.removeIndicator(DEL[k]?{name:DEL[k]}:{id:'sma'+k.slice(1)
 
 /* ---------- optional drawing tools (isolated from scan/chart logic) ---------- */
 function drawKey(){return 'mpDrawings:'+String(P.symbol||'')+':'+String(tf);}
+function hideKey(){return 'mpDrawHidden:'+String(P.symbol||'')+':'+String(tf);}
 function readSaved(){try{const v=JSON.parse(localStorage.getItem(drawKey())||'[]');return Array.isArray(v)?v:[];}catch(e){return [];}}
 function writeSaved(v){try{localStorage.setItem(drawKey(),JSON.stringify(v||[]));}catch(e){}}
+function readHidden(){try{return localStorage.getItem(hideKey())==='1';}catch(e){return false;}}
+function writeHidden(v){try{localStorage.setItem(hideKey(),v?'1':'0');}catch(e){}}
 function drawOverlays(){try{return chart?(chart.getOverlays({groupId:DRAW_GID})||[]):[];}catch(e){return [];}}
 function dropIncomplete(){drawOverlays().forEach(o=>{if((o.points||[]).length<needPts(o.name))try{chart.removeOverlay({id:o.id});}catch(e){}});}
 function serializeDraw(){
@@ -899,8 +915,15 @@ function restoreDraw(list){
   if(!chart)return;
   try{chart.removeOverlay({groupId:DRAW_GID});}catch(e){}
   (list||[]).forEach(o=>{
-    try{chart.createOverlay({name:o.name,groupId:DRAW_GID,mode:o.mode||'normal',points:o.points,extendData:o.extendData,styles:o.styles});}catch(e){}
+    try{chart.createOverlay({name:o.name,groupId:DRAW_GID,mode:o.mode||'normal',visible:!drawHidden,points:o.points,extendData:o.extendData,styles:o.styles});}catch(e){}
   });
+}
+function setDrawHidden(v,persist=true){
+  drawHidden=!!v;
+  if(persist)writeHidden(drawHidden);
+  try{chart.overrideOverlay({groupId:DRAW_GID,visible:!drawHidden});}catch(e){}
+  const b=$('uhide');
+  if(b){b.textContent=drawHidden?'🙈 Show drawing':'🙈 Hide drawing';b.classList.toggle('on',drawHidden);}
 }
 function persistIfChanged(){
   const cur=serializeDraw(),k=JSON.stringify(cur);
@@ -918,38 +941,41 @@ function redoDraw(){
   const s=future.pop();hist.push(s);restoreDraw(s);writeSaved(s);
   const cur=serializeDraw();hist[hist.length-1]=cur;lastSnap=JSON.stringify(cur);
 }
-function deleteDraw(){
-  const list=drawOverlays();if(!list.length)return;
-  try{chart.removeOverlay({id:list[list.length-1].id});}catch(e){}
-  commitDraw();
-}
-function clearDraw(){try{chart.removeOverlay({groupId:DRAW_GID});}catch(e){}commitDraw();}
 function toggleToolPanel(force){
   const open=typeof force==='boolean'?force:!$('tools').classList.contains('open');
   $('tools').classList.toggle('open',open);
   $('tdraw').classList.toggle('on',open);
   $('tdraw').setAttribute('aria-expanded',open?'true':'false');
-  if(!open){if(activeTool!=='cursor')setActiveTool('cursor');dropIncomplete();}
+  if(!open){dropIncomplete();setActiveTool(null);}
 }
 function setActiveTool(t){
-  activeTool=t;
-  document.querySelectorAll('#tools [data-tool]').forEach(b=>b.classList.toggle('on',b.dataset.tool===t));
-  $('chart').style.cursor=t==='cursor'?'default':'crosshair';
+  activeTool=t||null;
+  document.querySelectorAll('#toolpanel [data-tool]').forEach(b=>b.classList.toggle('on',b.dataset.tool===activeTool));
+  $('chart').style.cursor=activeTool?'crosshair':'default';
+}
+function promptText(t){
+  if(t==='price'){
+    let v='';try{v=window.prompt('Price label (optional)','')||'';}catch(e){v='';}
+    return String(v).trim();
+  }
+  if(t!=='text'&&t!=='callout')return undefined;
+  let v='';
+  try{v=window.prompt(t==='text'?'Text label':'Callout text',t==='text'?'Label':'Callout');}catch(e){v=t==='text'?'Label':'Callout';}
+  if(v==null||!String(v).trim())return null;
+  return String(v).trim();
 }
 function startDraw(t){
-  if(!chart||t==='cursor'){setActiveTool('cursor');return;}
-  const cfg=TOOLS[t];if(!cfg)return;
+  if(!chart||!TOOLS[t])return;
+  if(activeTool===t){dropIncomplete();setActiveTool(null);return;}
   dropIncomplete();
-  let ext;
-  if(t==='text'){
-    try{ext=window.prompt('Text label','Label');}catch(e){ext='Label';}
-    if(ext==null||!String(ext).trim()){setActiveTool('cursor');return;}
-  }
-  const o={name:cfg.name,groupId:DRAW_GID,mode:magnetOn?'weak_magnet':'normal',
-    onDrawEnd:()=>setTimeout(()=>{setActiveTool('cursor');commitDraw();},0)};
+  if(drawHidden)setDrawHidden(false);
+  const cfg=TOOLS[t],ext=promptText(t);
+  if(ext===null)return;
+  const o={name:cfg.name,groupId:DRAW_GID,visible:true,
+    onDrawEnd:()=>setTimeout(()=>{setActiveTool(null);commitDraw();},0)};
   if(cfg.styles)o.styles=cfg.styles;
-  if(ext!=null)o.extendData=String(ext);
-  try{chart.createOverlay(o);setActiveTool(t);}catch(e){setActiveTool('cursor');}
+  if(ext!==undefined&&ext!=='')o.extendData=ext;
+  try{chart.createOverlay(o);setActiveTool(t);}catch(e){setActiveTool(null);}
 }
 
 /* ---------- bases ---------- */
@@ -999,7 +1025,7 @@ function setTF(t){
   tf=t;data=aggregate(t);document.querySelectorAll('#tf button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
   rsBase=0;chart.setPeriod({span:1,type:PERIOD[t]});
   setTimeout(()=>{
-    drawBases();restoreDraw(readSaved());
+    drawBases();restoreDraw(readSaved());setDrawHidden(readHidden(),false);
     const cur=serializeDraw();hist=[cur];future=[];lastSnap=JSON.stringify(cur);
     setRange(rng);legend();
   },160);
@@ -1071,6 +1097,59 @@ function start(){
       if(txt)out.push({type:'text',attrs:{x:mid.x,y:mid.y-8,text:txt,align:'center',baseline:'bottom'},styles:{color:'#0ea5e9',size:11,backgroundColor:'transparent',borderSize:0}});
       return out;
     }});}catch(e){}
+  try{klinecharts.registerOverlay({name:'mpArrow',totalStep:3,needDefaultPointFigure:true,needDefaultXAxisFigure:true,needDefaultYAxisFigure:true,
+    createPointFigures:({coordinates})=>{
+      if(!coordinates||coordinates.length<2)return [];
+      const a=coordinates[0],b=coordinates[1],dx=b.x-a.x,dy=b.y-a.y,len=Math.hypot(dx,dy)||1;
+      if(len<4)return [];
+      const ux=dx/len,uy=dy/len,base={x:b.x-ux*12,y:b.y-uy*12},px=-uy*6,py=ux*6;
+      return [
+        {type:'line',attrs:{coordinates:[a,{x:base.x,y:base.y}]},styles:{color:'#0ea5e9',size:1.8}},
+        {type:'polygon',attrs:{coordinates:[b,{x:base.x+px,y:base.y+py},{x:base.x-px,y:base.y-py}]},
+          styles:{style:'fill',color:'#0ea5e9',borderColor:'#0ea5e9',borderSize:1}}
+      ];
+    }});}catch(e){}
+  try{klinecharts.registerOverlay({name:'mpPrice',totalStep:2,needDefaultPointFigure:false,needDefaultXAxisFigure:false,needDefaultYAxisFigure:false,
+    createPointFigures:({coordinates,bounding,overlay})=>{
+      if(!coordinates||!coordinates.length)return [];
+      const y=coordinates[0].y,p=overlay.points&&overlay.points[0],val=p&&typeof p.value==='number'?fmt(p.value):'';
+      const extra=String(overlay.extendData||'').trim(),text=(extra?extra+' · ':'')+val;
+      const w=Math.max(58,text.length*6.4+14),x=Math.max(4,bounding.width-w-4);
+      return [
+        {type:'line',attrs:{coordinates:[{x:0,y},{x:bounding.width,y}]},styles:{color:'#f59e0b',size:1.2,style:'dashed',dashedValue:[4,3]}},
+        {type:'rect',attrs:{x,y:y-10,width:w,height:20},styles:{style:'fill',color:dark?'rgba(245,158,11,.22)':'rgba(245,158,11,.14)',borderColor:'#f59e0b',borderSize:1}},
+        {type:'text',attrs:{x:x+w/2,y,text,align:'center',baseline:'middle'},styles:{color:'#f59e0b',size:11,weight:'bold',backgroundColor:'transparent',borderSize:0}}
+      ];
+    }});}catch(e){}
+  try{klinecharts.registerOverlay({name:'mpCallout',totalStep:3,needDefaultPointFigure:true,needDefaultXAxisFigure:false,needDefaultYAxisFigure:false,
+    createPointFigures:({coordinates,bounding,overlay})=>{
+      if(!coordinates||coordinates.length<2)return [];
+      const a=coordinates[0],b=coordinates[1],text=String(overlay.extendData||'Callout');
+      const w=Math.max(70,Math.min(190,text.length*6.2+20)),h=34;
+      const x=Math.max(3,Math.min(bounding.width-w-3,b.x-w/2)),y=Math.max(3,Math.min(bounding.height-h-3,b.y-h/2));
+      return [
+        {type:'line',attrs:{coordinates:[a,{x:x+w/2,y:y+h/2}]},styles:{color:'#8b5cf6',size:1.3}},
+        {type:'rect',attrs:{x,y,width:w,height:h},styles:{style:'fill',color:'#8b5cf6',borderColor:'#8b5cf6',borderSize:1}},
+        {type:'text',attrs:{x:x+w/2,y:y+h/2,text,align:'center',baseline:'middle'},styles:{color:'#fff',size:11,backgroundColor:'transparent',borderSize:0}}
+      ];
+    }});}catch(e){}
+  try{klinecharts.registerOverlay({name:'mpDateRange',totalStep:3,needDefaultPointFigure:true,needDefaultXAxisFigure:true,needDefaultYAxisFigure:false,
+    createPointFigures:({coordinates,bounding,overlay})=>{
+      if(!coordinates||coordinates.length<2)return [];
+      let x0=Math.min(coordinates[0].x,coordinates[1].x),x1=Math.max(coordinates[0].x,coordinates[1].x);
+      x0=Math.max(0,x0);x1=Math.min(bounding.width,x1);
+      const pts=overlay.points||[];
+      const ds=i=>{const p=pts[i];return p&&typeof p.timestamp==='number'
+        ?new Date(p.timestamp+330*60000).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit',timeZone:'UTC'}):'';};
+      const lab=ds(0)+' → '+ds(1);
+      const out=[{type:'rect',attrs:{x:x0,y:0,width:Math.max(2,x1-x0),height:bounding.height},
+        styles:{style:'fill',color:dark?'rgba(14,165,233,.12)':'rgba(14,165,233,.08)'}}];
+      [x0,x1].forEach(x=>out.push({type:'line',attrs:{coordinates:[{x,y:0},{x,y:bounding.height}]},
+        styles:{color:'#0ea5e9',size:1.2,style:'dashed',dashedValue:[4,3]}}));
+      if(lab)out.push({type:'text',attrs:{x:Math.min(bounding.width-4,Math.max(4,(x0+x1)/2)),y:14,text:lab,align:'center',baseline:'middle'},
+        styles:{color:'#0ea5e9',size:10.5,backgroundColor:'transparent',borderSize:0}});
+      return out;
+    }});}catch(e){}
   chart=klinecharts.init('chart');chart.setTimezone('Asia/Kolkata');chart.setStyles(chartStyles());
   chart.setSymbol({ticker:P.symbol,pricePrecision:2,volumePrecision:0});chart.setPeriod({span:1,type:'day'});
   chart.setLocale('en-US');chart.setDataLoader({getBars:({callback})=>callback(data)});
@@ -1083,8 +1162,9 @@ function start(){
   });
   $('chart').addEventListener('mouseleave',()=>legend());
   $('chart').addEventListener('mouseup',()=>setTimeout(commitDraw,40));
+  $('chart').addEventListener('contextmenu',()=>setTimeout(commitDraw,60));
   setTimeout(()=>{
-    drawBases();restoreDraw(readSaved());
+    drawBases();restoreDraw(readSaved());setDrawHidden(readHidden(),false);
     const cur=serializeDraw();hist=[cur];future=[];lastSnap=JSON.stringify(cur);
     setRange(rng);legend();
   },250);
@@ -1117,17 +1197,15 @@ $('tools').onclick=e=>{
   const b=e.target&&e.target.closest?e.target.closest('button'):null;if(!b)return;
   if(b.id==='tdraw'){toggleToolPanel();return;}
   if(b.dataset.tool){startDraw(b.dataset.tool);return;}
-  if(b.id==='umag'){magnetOn=!magnetOn;b.classList.toggle('on',magnetOn);b.title=magnetOn?'Snap to candles: on':'Snap to candles: off';return;}
   if(b.id==='uundo')undoDraw();
   else if(b.id==='uredo')redoDraw();
-  else if(b.id==='udel')deleteDraw();
-  else if(b.id==='uclear')clearDraw();
+  else if(b.id==='uhide')setDrawHidden(!drawHidden);
 };
 document.addEventListener('keydown',e=>{
   const k=(e.key||'').toLowerCase();
   if((e.ctrlKey||e.metaKey)&&k==='z'){e.preventDefault();e.shiftKey?redoDraw():undoDraw();}
   else if((e.ctrlKey||e.metaKey)&&k==='y'){e.preventDefault();redoDraw();}
-  else if(k==='escape')setActiveTool('cursor');
+  else if(k==='escape'){dropIncomplete();setActiveTool(null);}
 });
 window.addEventListener('beforeunload',()=>writeSaved(serializeDraw()));
 document.querySelectorAll('#tf button').forEach(b=>b.classList.toggle('on',b.dataset.t===tf));
