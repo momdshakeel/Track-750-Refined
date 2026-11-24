@@ -759,6 +759,8 @@ background:transparent;color:inherit;font:inherit;font-size:11px;padding:3px 7px
     <span class="tsep"></span>
     <button type="button" id="uundo" title="Undo (Ctrl+Z)">↶ Undo</button>
     <button type="button" id="uredo" title="Redo (Ctrl+Y)">↷ Redo</button>
+    <button type="button" id="udel" title="Delete the last drawing (Delete key)">⌫ Delete</button>
+    <button type="button" id="uclear" title="Clear all drawings on this symbol and timeframe">🧹 Clear all</button>
     <button type="button" id="uhide" title="Hide or show your drawings">🙈 Hide drawing</button>
   </div>
 </div>
@@ -940,6 +942,17 @@ function redoDraw(){
   if(!future.length)return;
   const s=future.pop();hist.push(s);restoreDraw(s);writeSaved(s);
   const cur=serializeDraw();hist[hist.length-1]=cur;lastSnap=JSON.stringify(cur);
+}
+function deleteDraw(){
+  const list=drawOverlays();if(!list.length)return;
+  try{chart.removeOverlay({id:list[list.length-1].id});}catch(e){}
+  commitDraw();
+}
+function clearDraw(){
+  const cur=serializeDraw();
+  try{chart.removeOverlay({groupId:DRAW_GID});}catch(e){}
+  setDrawHidden(false);writeSaved([]);
+  hist.push(cur);if(hist.length>60)hist.shift();future=[];lastSnap='[]';
 }
 function toggleToolPanel(force){
   const open=typeof force==='boolean'?force:!$('tools').classList.contains('open');
@@ -1199,12 +1212,15 @@ $('tools').onclick=e=>{
   if(b.dataset.tool){startDraw(b.dataset.tool);return;}
   if(b.id==='uundo')undoDraw();
   else if(b.id==='uredo')redoDraw();
+  else if(b.id==='udel')deleteDraw();
+  else if(b.id==='uclear')clearDraw();
   else if(b.id==='uhide')setDrawHidden(!drawHidden);
 };
 document.addEventListener('keydown',e=>{
   const k=(e.key||'').toLowerCase();
   if((e.ctrlKey||e.metaKey)&&k==='z'){e.preventDefault();e.shiftKey?redoDraw():undoDraw();}
   else if((e.ctrlKey||e.metaKey)&&k==='y'){e.preventDefault();redoDraw();}
+  else if(k==='delete'||k==='backspace'){e.preventDefault();deleteDraw();}
   else if(k==='escape'){dropIncomplete();setActiveTool(null);}
 });
 window.addEventListener('beforeunload',()=>writeSaved(serializeDraw()));
