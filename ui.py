@@ -690,16 +690,16 @@ color:var(--c);background:color-mix(in srgb,var(--c) 15%,transparent)}
 #bar,#chips{display:flex;align-items:center;gap:8px;overflow-x:auto;white-space:nowrap;scrollbar-width:none}
 @media(min-width:1000px){#tb{flex-direction:row;flex-wrap:wrap;align-items:center;gap:6px 6px}#bar,#chips{display:contents}}
 #bar::-webkit-scrollbar,#chips::-webkit-scrollbar{display:none}
-.tools{position:absolute;left:8px;top:8px;bottom:8px;z-index:6;display:flex;flex-direction:column;align-items:flex-start;gap:5px}
+.tools{position:absolute;left:10px;top:48px;bottom:8px;z-index:6;display:flex;flex-direction:column;align-items:flex-start;gap:5px}
 .tools #tdraw{width:30px;height:30px;min-width:30px;padding:0;display:inline-flex;align-items:center;justify-content:center;
   border:0;border-radius:50%;background:color-mix(in srgb,var(--bg) 72%,transparent);color:var(--fg);opacity:.55;
   box-shadow:0 2px 9px rgba(0,0,0,.12);cursor:pointer;transition:opacity .15s,background .15s,color .15s;backdrop-filter:blur(3px)}
 .tools #tdraw svg{width:15px;height:15px;display:block}
 .tools #tdraw:hover,.tools #tdraw:focus-visible{opacity:1;color:var(--accent)}
 .tools #tdraw.on{opacity:1;background:var(--accent);color:#fff;box-shadow:0 3px 12px rgba(37,99,235,.35)}
-#toolpanel{display:none;flex:1;min-height:0;flex-direction:column;align-items:stretch;gap:2px;overflow-y:auto;white-space:nowrap;scrollbar-width:thin;scrollbar-color:var(--line) transparent;padding:5px;border:1px solid var(--line);border-radius:10px;background:color-mix(in srgb,var(--bg) 94%,transparent);box-shadow:0 8px 24px rgba(0,0,0,.18);backdrop-filter:blur(4px)}
+#toolpanel{display:none;flex:1;min-height:0;flex-direction:column;align-items:stretch;gap:1px;overflow-y:auto;white-space:nowrap;scrollbar-width:thin;scrollbar-color:var(--line) transparent;padding:5px;border:1px solid var(--line);border-radius:10px;background:color-mix(in srgb,var(--bg) 94%,transparent);box-shadow:0 8px 24px rgba(0,0,0,.18);backdrop-filter:blur(4px)}
 .tools.open #toolpanel{display:flex}
-.tools button{flex:none;border:1px solid var(--line);background:transparent;color:inherit;border-radius:7px;font:inherit;font-size:10.5px;line-height:1.2;font-weight:700;padding:3px 7px;cursor:pointer;width:150px;text-align:left}
+.tools button{flex:none;border:1px solid var(--line);background:transparent;color:inherit;border-radius:7px;font:inherit;font-size:10px;line-height:1.15;font-weight:700;padding:2px 7px;cursor:pointer;width:150px;text-align:left}
 .tools button.on{background:var(--fg);color:var(--bg);border-color:var(--fg)}
 .tools .tsep{width:100%;height:1px;background:var(--line);margin:2px 0;flex:none}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;flex:none}
@@ -716,13 +716,15 @@ background:transparent;color:inherit;font:inherit;font-size:11px;padding:3px 7px
 .chip.on{opacity:1;background:var(--soft)}
 #wrap{position:relative;flex:1;min-height:240px}
 #chart{position:absolute;inset:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;touch-action:none}
-#lg{position:absolute;right:10px;top:7px;z-index:3;pointer-events:none;font-size:11.5px;line-height:1.5;max-width:calc(100% - 180px);text-align:right}
+#lg{position:absolute;left:10px;right:auto;top:7px;z-index:3;pointer-events:none;font-size:11.5px;line-height:1.5;max-width:calc(100% - 92px);text-align:left}
+#lg>div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #lg .m{opacity:.6;margin-left:6px}#lg .dt{font-weight:600;margin-right:4px}
 #lg .hl{color:#2563eb;font-weight:600}
 #ft{font-size:10.5px;opacity:.6;text-align:right}
 .err{padding:16px;opacity:.75}
 @media(max-width:1149px){.sn{display:none}}
-@media(max-width:560px){.sym{font-size:20px}.px{font-size:21px}.co{font-size:13px}.sub,.asof,.long,.sn,#lg .hl,#lg .dt{display:none}.seg button{padding:5px 8px;min-width:30px}#lg{font-size:10px;max-width:calc(100% - 160px)}.tools{left:6px;top:6px;bottom:6px;gap:4px}.tools #tdraw{width:26px;height:26px;min-width:26px;opacity:.62}.tools #tdraw svg{width:13px;height:13px}.tools button{width:132px;font-size:10px}#lg .m{margin-left:4px}.r{gap:6px}#hd{gap:4px}}
+@media(max-width:700px){#lg{font-size:10px;max-width:calc(100% - 72px)}.tools{left:6px;top:34px;bottom:6px;gap:4px}.tools #tdraw{width:26px;height:26px;min-width:26px;opacity:.62}.tools #tdraw svg{width:13px;height:13px}.tools button{width:132px;font-size:10px}}
+@media(max-width:560px){.sym{font-size:20px}.px{font-size:21px}.co{font-size:13px}.sub,.asof,.long,.sn,#lg .hl,#lg .dt{display:none}.seg button{padding:5px 8px;min-width:30px}#lg{font-size:10px;max-width:calc(100% - 72px)}.tools{left:6px;top:34px;bottom:6px;gap:4px}.tools #tdraw{width:26px;height:26px;min-width:26px;opacity:.62}.tools #tdraw svg{width:13px;height:13px}.tools button{width:132px;font-size:10px}#lg .m{margin-left:4px}.r{gap:6px}#hd{gap:4px}}
 </style></head><body>
 <div id="hd"></div>
 <div id="tb">
