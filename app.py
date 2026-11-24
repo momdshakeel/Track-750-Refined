@@ -1365,8 +1365,8 @@ SCREEN_TABS = {
     "Stage 1 Bases": "bases",
     "RS Blue Dot": "blue_dot",
     "Breadth & Sectors": "market",
-    "How to Use This Scanner": "guide",
     "All Stocks": "all",
+    "How to Use This Scanner": "guide",
 }
 SCREEN_DESCRIPTIONS = {
     "top": "A focused shortlist of high-RS stocks passing the trend and RS-line checks.",
@@ -1378,7 +1378,7 @@ SCREEN_DESCRIPTIONS = {
     "bases": "Early sideways bases around a flat long-term moving average.",
     "blue_dot": "Stocks whose relative-strength line leads price to a 52-week high.",
     "market": "Market participation, group strength, and the new rotation map.",
-    "chart": "Search a stock and inspect daily candles, volume, moving averages, and a manually marked base and pivot.",
+    "chart": "Search a stock and inspect daily candles, volume, moving averages, auto-detected bases and optional drawing tools.",
     "all": "The full rated universe, with the current Filters applied.",
     "guide": "Definitions and a practical workflow for reading scanner results.",
 }
@@ -1631,81 +1631,118 @@ elif active_screen == "all":
 else:
     st.markdown("""
     <style>
-    .guide-hero{padding:26px 28px;border-radius:18px;margin:4px 0 20px;
-      background:linear-gradient(120deg,rgba(37,99,235,.13),rgba(16,185,129,.10));
-      border:1px solid rgba(100,116,139,.22)}
-    .guide-eyebrow{text-transform:uppercase;letter-spacing:.12em;font-size:.72rem;font-weight:700;
-      color:#2563eb;margin-bottom:8px}
-    .guide-hero h2{margin:0 0 8px;font-size:1.65rem}
-    .guide-hero p{margin:0;max-width:900px;line-height:1.6;opacity:.82}
-    .guide-card{border:1px solid rgba(100,116,139,.23);border-radius:14px;padding:16px 17px;
-      min-height:148px;margin:0 0 12px;background:rgba(127,127,127,.035)}
-    .guide-card .gicon{font-size:1.35rem;margin-bottom:8px}
-    .guide-card h4{margin:0 0 6px;font-size:1rem}
-    .guide-card p{margin:0;font-size:.9rem;line-height:1.5;opacity:.78}
-    .guide-step{border-left:3px solid #3b82f6;padding:4px 0 6px 14px;margin:8px 0 12px}
+    .guide-hero{position:relative;overflow:hidden;padding:28px 30px;border-radius:20px;margin:4px 0 18px;
+      background:linear-gradient(120deg,color-mix(in srgb,var(--mp-accent) 16%,var(--mp-surface)),var(--mp-surface2) 56%,color-mix(in srgb,var(--mp-accent2) 12%,var(--mp-surface)));
+      border:1px solid color-mix(in srgb,var(--mp-accent) 30%,var(--mp-line));box-shadow:0 14px 34px var(--mp-shadow)}
+    .guide-hero:after{content:"";position:absolute;right:-60px;top:-90px;width:260px;height:260px;border-radius:50%;
+      background:radial-gradient(circle,var(--mp-glow),transparent 70%);pointer-events:none}
+    .guide-eyebrow{text-transform:uppercase;letter-spacing:.14em;font-size:.72rem;font-weight:800;
+      color:var(--mp-accent);margin-bottom:9px}
+    .guide-hero h2{margin:0 0 9px;font-size:1.72rem;letter-spacing:-.02em}
+    .guide-hero p{margin:0;max-width:920px;line-height:1.62;color:var(--mp-muted);font-weight:500}
+    .guide-new{display:flex;flex-wrap:wrap;gap:8px;margin-top:15px}
+    .guide-new span{padding:5px 10px;border-radius:999px;font-size:.75rem;font-weight:700;
+      color:var(--mp-accent);background:color-mix(in srgb,var(--mp-accent) 10%,var(--mp-surface));
+      border:1px solid color-mix(in srgb,var(--mp-accent) 22%,var(--mp-line))}
+    .guide-sec{display:flex;align-items:center;gap:10px;margin:22px 0 12px}
+    .guide-sec .badge{width:29px;height:29px;flex:none;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;
+      background:linear-gradient(135deg,var(--mp-accent),var(--mp-accent2));color:#fff;font-weight:800;font-size:.8rem;
+      box-shadow:0 4px 12px color-mix(in srgb,var(--mp-accent) 30%,transparent)}
+    .guide-sec h3{margin:0;font-size:1.08rem;letter-spacing:-.01em}
+    .guide-card{position:relative;border:1px solid var(--mp-line);border-radius:15px;padding:17px 18px;
+      min-height:158px;margin:0 0 12px;background:var(--mp-surface);box-shadow:0 6px 18px var(--mp-shadow);
+      transition:transform .15s,border-color .15s}
+    .guide-card:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--mp-accent) 45%,var(--mp-line))}
+    .guide-card .gicon{width:35px;height:35px;border-radius:11px;display:inline-flex;align-items:center;justify-content:center;
+      font-size:1.15rem;margin-bottom:10px;background:color-mix(in srgb,var(--mp-accent) 12%,var(--mp-surface2));
+      color:var(--mp-accent)}
+    .guide-card h4{margin:0 0 7px;font-size:1rem;letter-spacing:-.01em}
+    .guide-card p{margin:0;font-size:.9rem;line-height:1.56;color:var(--mp-muted)}
+    .guide-step{position:relative;border:1px solid var(--mp-line);border-radius:13px;padding:12px 14px 12px 17px;
+      margin:9px 0;background:var(--mp-surface);box-shadow:0 5px 14px var(--mp-shadow)}
+    .guide-step:before{content:"";position:absolute;left:0;top:11px;bottom:11px;width:3px;border-radius:99px;
+      background:linear-gradient(180deg,var(--mp-accent),var(--mp-accent2))}
     .guide-step b{font-size:.98rem}
-    .guide-step p{margin:3px 0 0;line-height:1.5;opacity:.78}
-    .guide-callout{padding:14px 16px;border-radius:12px;background:rgba(245,158,11,.10);
-      border:1px solid rgba(245,158,11,.25);line-height:1.55;margin:10px 0}
-    .guide-good{padding:14px 16px;border-radius:12px;background:rgba(16,185,129,.09);
-      border:1px solid rgba(16,185,129,.22);line-height:1.55;margin:10px 0}
+    .guide-step p{margin:4px 0 0;line-height:1.55;color:var(--mp-muted)}
+    .guide-callout,.guide-good{padding:15px 17px;border-radius:13px;line-height:1.6;margin:11px 0;
+      color:var(--mp-text);box-shadow:0 5px 16px var(--mp-shadow)}
+    .guide-callout{background:color-mix(in srgb,#f59e0b 11%,var(--mp-surface));
+      border:1px solid color-mix(in srgb,#f59e0b 30%,var(--mp-line))}
+    .guide-good{background:color-mix(in srgb,var(--mp-good) 11%,var(--mp-surface));
+      border:1px solid color-mix(in srgb,var(--mp-good) 30%,var(--mp-line))}
+    .guide-step .gl{color:var(--mp-accent);font-weight:800}
+    .guide-step .gok{color:var(--mp-good);font-weight:800}
+    .guide-card code,.guide-callout code{color:var(--mp-accent);font-weight:700}
+    @media (max-width:760px){
+      .guide-hero{padding:22px 20px;border-radius:16px;margin:2px 0 14px}
+      .guide-hero h2{font-size:1.42rem}
+      .guide-hero p{font-size:.93rem}
+      .guide-sec{margin:18px 0 10px}
+      .guide-sec h3{font-size:1rem}
+      .guide-card{min-height:0;padding:15px 16px;border-radius:13px}
+      .guide-card h4{font-size:.95rem}
+      .guide-step{padding:11px 13px 11px 16px}
+      .guide-callout,.guide-good{padding:13px 14px;font-size:.92rem}
+    }
     </style>
     <div class="guide-hero">
-      <div class="guide-eyebrow">A practical walkthrough</div>
+      <div class="guide-eyebrow">A practical walkthrough · refreshed for the current build</div>
       <h2>How to use this scanner</h2>
-      <p>Use the scan to shortlist stocks showing relative strength, a constructive trend and a possible setup.
-      Then inspect the chart and decide whether the risk fits your own plan. No single score confirms a trade.</p>
+      <p>Use the scan to shortlist stocks with relative strength, a constructive trend and a possible setup.
+      Then confirm the structure on the in-app chart and decide whether the risk fits your own plan. No single score confirms a trade.</p>
+      <div class="guide-new"><span>✏ Chart drawing tools</span><span>Entry Candidates presets</span><span>VCP recent breakouts</span><span>RS Δ in chart header</span><span>Light / dark theme</span></div>
     </div>
     """, unsafe_allow_html=True)
 
+    def _gsec(num: str, title: str) -> None:
+        st.markdown(f'<div class="guide-sec"><span class="badge">{num}</span><h3>{title}</h3></div>',
+                    unsafe_allow_html=True)
+
+    _gsec("01", "The three-step workflow")
     g1, g2, g3 = st.columns(3)
     with g1:
-        st.markdown("""<div class="guide-card"><div class="gicon">🧭</div><h4>1 · Check the market</h4>
-        <p>Open <b>Breadth & sectors</b>. See whether participation is broad, narrow or weak before focusing on
-        individual leaders.</p></div>""", unsafe_allow_html=True)
+        st.markdown("""<div class="guide-card"><div class="gicon">🧭</div><h4>Market first</h4>
+        <p>Open <b>Breadth & sectors</b>. Check participation and the rotation map before focusing on individual leaders.</p></div>""",
+                    unsafe_allow_html=True)
     with g2:
-        st.markdown("""<div class="guide-card"><div class="gicon">💪</div><h4>2 · Find relative strength</h4>
-        <p>Look for a higher <b>RS Rating</b> and positive benchmark-relative performance. These answer
-        different questions—see the distinction below.</p></div>""", unsafe_allow_html=True)
+        st.markdown("""<div class="guide-card"><div class="gicon">💪</div><h4>Find relative strength</h4>
+        <p>Prefer a higher <b>RS Rating</b>, positive <b>RS Δ</b> and strong <b>Sector strength</b>. These answer different questions—see below.</p></div>""",
+                    unsafe_allow_html=True)
     with g3:
-        st.markdown("""<div class="guide-card"><div class="gicon">🔎</div><h4>3 · Inspect the setup</h4>
-        <p>Check trend conditions, volume, base or breakout context, then open the stock details and confirm
-        the price action on a chart.</p></div>""", unsafe_allow_html=True)
+        st.markdown("""<div class="guide-card"><div class="gicon">🔎</div><h4>Inspect the setup</h4>
+        <p>Check trend, volume and base context. Open the stock chart for auto-marked bases, the VCP pivot and optional drawing tools.</p></div>""",
+                    unsafe_allow_html=True)
 
-    st.markdown("#### Start with the right meaning of RS")
+    _gsec("02", "Start with the right meaning of RS")
     rs1, rs2 = st.columns(2)
     with rs1:
-        st.markdown("""<div class="guide-card"><h4>RS Rating · relative rank within this scan</h4>
-        <p>A 1–99 percentile-style score ranking each rated stock against the other stocks in this universe.
-        It is based on weighted 3-, 6-, 9- and 12-month returns (40%, 20%, 20%, 20%). A higher value means
-        stronger performance versus this stock universe. It does <b>not</b> compare directly with an index.</p></div>""",
+        st.markdown("""<div class="guide-card"><h4>RS Rating · rank within this universe</h4>
+        <p>A 1–99 percentile-style score based on weighted 3-, 6-, 9- and 12-month returns
+        (40%, 20%, 20%, 20%). Higher means stronger against the other scanned stocks—not against an index.</p></div>""",
                     unsafe_allow_html=True)
     with rs2:
-        st.markdown("""<div class="guide-card"><h4>RS vs benchmark · performance against an index</h4>
-        <p><b>RS vs Nifty · 3M / 6M</b> compares the stock’s price movement with the downloaded benchmark over
-        those periods. Positive means it outperformed that benchmark; negative means it underperformed.
-        The <b>RS Line</b> tracks the stock-to-index ratio; a new high means that ratio reached a 52-week high.</p></div>""",
+        st.markdown("""<div class="guide-card"><h4>RS Δ · performance against the benchmark</h4>
+        <p>The chart header now shows <b>RS Δ vs benchmark</b> for Today, 5D, 15D, 1M, 3M, 6M and 12M.
+        Positive means outperformance. The <b>RS line</b> tracks the stock-to-index ratio; blue dots mark new highs.</p></div>""",
                     unsafe_allow_html=True)
-    st.markdown("""<div class="guide-callout"><b>Benchmark currently used:</b> Nifty 500 (Yahoo Finance symbol
-    <code>^CRSLDX</code>); if that download fails, the pipeline falls back to Nifty 50 (<code>^NSEI</code>).
-    The displayed “RS vs Nifty” figures use the benchmark series returned by the scan. The current saved table
-    does not record which fallback was used, so check the Daily scan log if you need to verify that run.</div>""",
+    st.markdown("""<div class="guide-callout"><b>Benchmark currently used:</b> Nifty 500 (<code>^CRSLDX</code>),
+    with Nifty 50 (<code>^NSEI</code>) as fallback. The chart header, RS line and “RS vs Nifty” columns use the
+    benchmark series returned by the scan. The saved table does not record which fallback was used.</div>""",
                 unsafe_allow_html=True)
 
-    st.markdown("#### Read the scanner from broad context to one stock")
+    _gsec("03", "Read from broad context to one stock")
     steps = [
         ("A", "Breadth & sectors", "Use advancing/declining stocks and the share above the 50-, 150- and 200-day averages to judge market participation. The rotation map compares each group’s median 3-month benchmark-relative return with the share of its stocks whose RS is improving. It is a scanner-derived view, not a classic index-based RRG."),
-        ("B", "RS Rating and RS vs benchmark", "Prefer a high or improving RS Rating for leaders, then check whether 3M/6M benchmark-relative figures are positive and whether the RS line is near a high. These are complementary signals, not guarantees."),
+        ("B", "RS Rating and RS Δ", "Prefer a high or improving RS Rating for leaders, then check the chart header’s RS Δ vs benchmark and whether the RS line is near a high. These are complementary signals, not guarantees."),
         ("C", "Trend Template (score / 8)", "Open the Trend Template tab or the stock’s ⓘ details. Review each condition, not just the total. A full 8/8 means all eight rules pass on the latest data; it does not mean the stock is automatically a buy."),
         ("D", "Trend, volume and setup", "Strong trend / Developing / Weakening are rule-based summaries. Volume pressure compares volume on up days with down days over 20 sessions; it is not delivery data. VCP, base and breakout labels are pattern candidates that need chart confirmation."),
-        ("E", "Confirm and manage risk", "Click the symbol to open its TradingView chart. Check the actual structure, liquidity, gaps, upcoming events and a sensible invalidation/risk level before making any decision."),
+        ("E", "Confirm on the in-app chart", "Click the symbol to open the KLine chart. Auto-detected bases, the VCP pivot, sector strength and the Trend Template pill are already marked; the small pencil opens optional drawing tools when you want to annotate."),
     ]
     for letter, title, description in steps:
-        st.markdown(f'<div class="guide-step"><b><span style="color:#3b82f6">{letter}</span> · {title}</b><p>{description}</p></div>',
+        st.markdown(f'<div class="guide-step"><b><span class="gl">{letter}</span> · {title}</b><p>{description}</p></div>',
                     unsafe_allow_html=True)
 
-    st.markdown("#### What does Trend Template 8/8 mean?")
+    _gsec("04", "Trend Template: what 8/8 means")
     st.caption("The score counts how many of these rules pass for a stock on the latest scan date.")
     tt_rules = [
         "Price is above both the 150-day and 200-day averages.",
@@ -1720,18 +1757,18 @@ else:
     tt_left, tt_right = st.columns(2)
     for i, rule in enumerate(tt_rules):
         with (tt_left if i < 4 else tt_right):
-            st.markdown(f'<div class="guide-step"><b><span style="color:#10b981">✓ {i + 1}</span></b><p>{rule}</p></div>',
+            st.markdown(f'<div class="guide-step"><b><span class="gok">✓ {i + 1}</span></b><p>{rule}</p></div>',
                         unsafe_allow_html=True)
 
-    st.markdown("#### What the setup tabs are looking for")
+    _gsec("05", "Setup tabs at a glance")
     s1, s2 = st.columns(2)
     with s1:
-        st.markdown(f"""<div class="guide-card"><h4>VCP setups</h4><p>Possible volatility contraction patterns:
-        successively tighter pullbacks with quieter volume, with price near a marked pivot. The pivot is a level
-        to watch; wait for chart confirmation rather than treating proximity as a signal.</p></div>
+        st.markdown(f"""<div class="guide-card"><h4>VCP setups</h4><p>Switch between <b>Setups</b> and
+        <b>Recent breakouts</b> inside the tab. Auto-marked charts show <b>Base pivot</b> and <b>VCP pivot</b>
+        separately. A pivot is a level to watch; wait for chart confirmation rather than treating proximity as a signal.</p></div>
         <div class="guide-card"><h4>Entry candidates</h4><p>A ranked shortlist combining RS, Trend Template, sector
-        strength, a fresh pivot/breakout, volume and extension risk. Use Strict, Balanced or Relaxed to control how
-        selective the list is, then confirm the chart and risk level before acting.</p></div>
+        strength, a fresh pivot/breakout, volume and extension risk. Use <b>Strict</b>, <b>Balanced</b> or
+        <b>Relaxed</b> to control selectivity; Balanced is the default. Confirm the chart and risk level before acting.</p></div>
         <div class="guide-card"><h4>Stage 1 bases</h4><p>Stocks around a flat 150-day average with a sideways base.
         These are early watch-list candidates; the scanner does not call a base a confirmed uptrend.</p></div>""",
                     unsafe_allow_html=True)
@@ -1744,7 +1781,7 @@ else:
         a watch signal, not a forecast.</p></div>""",
                     unsafe_allow_html=True)
 
-    st.markdown("#### A live example from this scan")
+    _gsec("06", "Learn from a live example")
     st.caption("This small table uses the current scan data to illustrate how the columns fit together. It is an example for learning, not a recommendation.")
     guide_cols = [c for c in ["Symbol", "Trend_State", "RS_Rating", "RS_Excess_3M_%", "RS_Excess_6M_%",
                               "TT_Score", "Volume_Pressure_20D", "Stage"] if c in result.columns]
@@ -1755,7 +1792,7 @@ else:
     else:
         st.info("A live example will appear when scan results are available.")
 
-    st.markdown("#### Use the filters to build a watchlist")
+    _gsec("07", "Filters, details and charts")
     f1, f2 = st.columns(2)
     with f1:
         st.markdown("""<div class="guide-card"><h4>Keep the first pass broad</h4>
@@ -1766,27 +1803,31 @@ else:
     with f2:
         st.markdown("""<div class="guide-card"><h4>Open details, then the chart</h4>
         <p>Use the small <b>ⓘ</b> button beside a symbol for the in-app summary. Click the symbol itself to open
-        its TradingView chart. Switch between <b>List</b> and <b>Strength map</b> to compare current RS signals;
-        the map is not a historical price chart. Tables can be sorted by clicking a column heading and downloaded as CSV.</p></div>""",
+        its KLine chart, then use the subtle pencil button for optional drawings. Switch between <b>List</b> and
+        <b>Strength map</b> to compare current RS signals; the map is not a historical price chart. Sort tables by
+        clicking a heading and download them as CSV.</p></div>""",
                     unsafe_allow_html=True)
 
-    st.markdown("#### Important limits")
+    _gsec("08", "Know the limits")
     st.markdown("""<div class="guide-good"><b>Best practice:</b> treat this app as a discovery and comparison tool.
     Confirm signals on the chart, consider liquidity and downside risk, and use your own rules. Scores, pattern
     labels and market context are based on historical data; they can be delayed, incomplete or wrong and do not
-    predict future returns.</div>""", unsafe_allow_html=True)
+    predict future returns. Optional drawings stay in your browser only and never change scan results.</div>""",
+                unsafe_allow_html=True)
     st.caption(f"Data as of {as_of:%d %b %Y}. RS ratings require sufficient price history; calculated scan coverage is {len(result)} stocks.")
 
 with st.expander("Notes & limitations"):
     st.markdown(
-        f"- **Data:** calculated once every weekday evening (about 5 pm IST, after the market closes) by a free "
-        f"GitHub job and saved to the repository, so this page opens in seconds and never calls Yahoo itself.\n"
+        f"- **Data:** calculated once every weekday evening (about 5 pm IST, after the market closes) and saved "
+        f"to the app's `data/` folder. The app reads those bundled CSV files first; it only uses a remote dataset "
+        f"when `MARKETPULSE_DATA_URL` is configured, and never calls Yahoo from the browser.\n"
         f"- **Universe:** the Nifty Total Market list from NSE (Nifty 500 + Nifty Microcap 250, about 750 stocks). "
         f"Placeholder `DUMMY…` rows are ignored; a few REIT units are included as NSE lists them.\n"
         f"- **RS Rating** ranks every rated stock in this universe (1-99). Stocks with less than 12 months of "
         f"price history, or with no Yahoo Finance data, are not rated.\n"
         f"- **Momentum context:** 3- and 6-month relative returns compare each stock with the Nifty 500. "
-        f"RS improvement compares the latest 3-month relative return with the prior 3-month period. "
+        f"**RS Δ vs benchmark** in the chart header compares stock and benchmark returns over each listed lookback; "
+        f"it is not a true RS rating recalculated by timeframe. "
         f"The 20-day up/down volume ratio compares volume on rising and falling sessions; ≥1.25 is "
         f"up-volume dominant and ≤0.80 is down-volume dominant. This is not delivery or participant-flow data.\n"
         f"- **Trend status and extension labels are screening heuristics, not forecasts.** Strong trend requires "
@@ -1805,6 +1846,9 @@ with st.expander("Notes & limitations"):
         f"Stage 4 = below a falling one; Stage 1/3 = flat average after a decline/advance.\n"
         f"- **VCP, bases and breakouts are rule-based approximations** computed on daily closes/highs/lows. "
         f"They will flag some patterns a human would reject and miss others, so always confirm on the chart.\n"
+        f"- **Drawing tools** are optional browser-side overlays saved per symbol and timeframe. Delete removes the "
+        f"last drawing and Clear all removes every drawing for that symbol/timeframe only; they never affect scan "
+        f"data, screens or other charts.\n"
         f"- RS Line is measured against the Nifty 500 index (Yahoo Finance); Yahoo data can have gaps.\n"
         f"- Educational tool, not investment advice."
     )
