@@ -688,10 +688,13 @@ color:var(--c);background:color-mix(in srgb,var(--c) 15%,transparent)}
 .rsp .k{opacity:.6;margin-left:7px;margin-right:2px}
 #tb{display:flex;flex-direction:column;gap:4px}
 #bar,#chips{display:flex;align-items:center;gap:8px;overflow-x:auto;white-space:nowrap;scrollbar-width:none}
-@media(min-width:1000px){#tb{flex-direction:row;flex-wrap:wrap;align-items:center;gap:6px 6px}#bar,#chips,#tools{display:contents}}
-#bar::-webkit-scrollbar,#chips::-webkit-scrollbar,#tools::-webkit-scrollbar{display:none}
-.tools{display:flex;align-items:center;gap:5px;overflow-x:auto;white-space:nowrap;scrollbar-width:none;padding-top:2px}
-.tools .tl{font-size:10.5px;font-weight:800;opacity:.6;letter-spacing:.08em;text-transform:uppercase;flex:none}
+@media(min-width:1000px){#tb{flex-direction:row;flex-wrap:wrap;align-items:center;gap:6px 6px}#bar,#chips{display:contents}}
+#bar::-webkit-scrollbar,#chips::-webkit-scrollbar,#toolpanel::-webkit-scrollbar{display:none}
+.tools{display:flex;align-items:center;gap:5px;flex:none}
+.tools #tdraw{border-color:var(--accent);color:var(--accent);font-size:14px;min-width:32px;padding:4px 8px}
+.tools #tdraw.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+#toolpanel{display:none;align-items:center;gap:5px;overflow-x:auto;white-space:nowrap;scrollbar-width:none;max-width:min(74vw,860px)}
+.tools.open #toolpanel{display:flex}
 .tools button{flex:none;border:1px solid var(--line);background:transparent;color:inherit;border-radius:7px;font:inherit;font-size:11px;font-weight:700;padding:4px 8px;cursor:pointer;min-width:28px}
 .tools button.on{background:var(--fg);color:var(--bg);border-color:var(--fg)}
 .tools .tsep{width:1px;height:18px;background:var(--line);margin:0 2px;flex:none}
@@ -735,22 +738,24 @@ background:transparent;color:inherit;font:inherit;font-size:11px;padding:3px 7px
  <button class="chip on" id="t_rs" style="--c:#16a34a" title="Price relative to the benchmark index"><i></i>RS line</button>
  <button class="chip on" id="t_base" style="--c:#3b82f6" title="Detected bases, numbered oldest first"><i class="b"></i>Bases</button>
 </div>
-<div id="tools" title="Optional drawing tools. Right-click a drawing to delete it.">
-  <span class="tl">Draw</span>
-  <button type="button" class="on" data-tool="cursor" title="Cursor — select and move drawings">↖</button>
-  <button type="button" data-tool="trend" title="Trend line — click start and end">╱</button>
-  <button type="button" data-tool="hline" title="Horizontal price line — click once">━</button>
-  <button type="button" data-tool="vline" title="Vertical date line — click once">│</button>
-  <button type="button" data-tool="rect" title="Rectangle — click two corners">▭</button>
-  <button type="button" data-tool="fib" title="Fibonacci retracement — click two points">Fib</button>
-  <button type="button" data-tool="measure" title="Measure move — click two points">%</button>
-  <button type="button" data-tool="text" title="Text label — click to place">T</button>
-  <span class="tsep"></span>
-  <button type="button" id="umag" title="Snap new drawings to nearby candles">Magnet</button>
-  <button type="button" id="uundo" title="Undo (Ctrl+Z)">↶</button>
-  <button type="button" id="uredo" title="Redo (Ctrl+Y)">↷</button>
-  <button type="button" id="udel" title="Delete the last drawing (right-click any drawing to delete it)">⌫</button>
-  <button type="button" id="uclear" title="Clear all drawings on this symbol and timeframe">Clear</button>
+<div id="tools" class="tools" title="Optional drawing tools. Right-click a drawing to delete it.">
+  <button type="button" id="tdraw" title="Open or close drawing tools" aria-expanded="false">✏</button>
+  <div id="toolpanel">
+    <button type="button" class="on" data-tool="cursor" title="Cursor — select and move drawings">↖ Cursor</button>
+    <button type="button" data-tool="trend" title="Trend line — click start and end">╱ Trend line</button>
+    <button type="button" data-tool="hline" title="Horizontal price line — click once">━ Horizontal</button>
+    <button type="button" data-tool="vline" title="Vertical date line — click once">│ Vertical</button>
+    <button type="button" data-tool="rect" title="Rectangle — click two corners">▭ Rectangle</button>
+    <button type="button" data-tool="fib" title="Fibonacci retracement — click two points">∿ Fibonacci</button>
+    <button type="button" data-tool="measure" title="Measure move — click two points">% Measure</button>
+    <button type="button" data-tool="text" title="Text label — click to place">T Text</button>
+    <span class="tsep"></span>
+    <button type="button" id="umag" title="Snap new drawings to nearby candles">⌁ Magnet</button>
+    <button type="button" id="uundo" title="Undo (Ctrl+Z)">↶ Undo</button>
+    <button type="button" id="uredo" title="Redo (Ctrl+Y)">↷ Redo</button>
+    <button type="button" id="udel" title="Delete the last drawing (right-click any drawing to delete it)">⌫ Delete</button>
+    <button type="button" id="uclear" title="Clear all drawings on this symbol and timeframe">Clear all</button>
+  </div>
 </div>
 </div>
 <div id="wrap"><div id="lg"></div><div id="chart"></div></div>
@@ -919,6 +924,13 @@ function deleteDraw(){
   commitDraw();
 }
 function clearDraw(){try{chart.removeOverlay({groupId:DRAW_GID});}catch(e){}commitDraw();}
+function toggleToolPanel(force){
+  const open=typeof force==='boolean'?force:!$('tools').classList.contains('open');
+  $('tools').classList.toggle('open',open);
+  $('tdraw').classList.toggle('on',open);
+  $('tdraw').setAttribute('aria-expanded',open?'true':'false');
+  if(!open){if(activeTool!=='cursor')setActiveTool('cursor');dropIncomplete();}
+}
 function setActiveTool(t){
   activeTool=t;
   document.querySelectorAll('#tools [data-tool]').forEach(b=>b.classList.toggle('on',b.dataset.tool===t));
@@ -1103,6 +1115,7 @@ $('zout').onclick=()=>{const b=chart.getBarSpace().bar;chart.setBarSpace(Math.ma
 });
 $('tools').onclick=e=>{
   const b=e.target&&e.target.closest?e.target.closest('button'):null;if(!b)return;
+  if(b.id==='tdraw'){toggleToolPanel();return;}
   if(b.dataset.tool){startDraw(b.dataset.tool);return;}
   if(b.id==='umag'){magnetOn=!magnetOn;b.classList.toggle('on',magnetOn);b.title=magnetOn?'Snap to candles: on':'Snap to candles: off';return;}
   if(b.id==='uundo')undoDraw();
