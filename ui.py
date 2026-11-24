@@ -688,8 +688,13 @@ color:var(--c);background:color-mix(in srgb,var(--c) 15%,transparent)}
 .rsp .k{opacity:.6;margin-left:7px;margin-right:2px}
 #tb{display:flex;flex-direction:column;gap:4px}
 #bar,#chips{display:flex;align-items:center;gap:8px;overflow-x:auto;white-space:nowrap;scrollbar-width:none}
-@media(min-width:1000px){#tb{flex-direction:row;flex-wrap:wrap;align-items:center;gap:6px 6px}#bar,#chips{display:contents}}
-#bar::-webkit-scrollbar,#chips::-webkit-scrollbar{display:none}
+@media(min-width:1000px){#tb{flex-direction:row;flex-wrap:wrap;align-items:center;gap:6px 6px}#bar,#chips,#tools{display:contents}}
+#bar::-webkit-scrollbar,#chips::-webkit-scrollbar,#tools::-webkit-scrollbar{display:none}
+.tools{display:flex;align-items:center;gap:5px;overflow-x:auto;white-space:nowrap;scrollbar-width:none;padding-top:2px}
+.tools .tl{font-size:10.5px;font-weight:800;opacity:.6;letter-spacing:.08em;text-transform:uppercase;flex:none}
+.tools button{flex:none;border:1px solid var(--line);background:transparent;color:inherit;border-radius:7px;font:inherit;font-size:11px;font-weight:700;padding:4px 8px;cursor:pointer;min-width:28px}
+.tools button.on{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.tools .tsep{width:1px;height:18px;background:var(--line);margin:0 2px;flex:none}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;flex:none}
 .seg button{border:0;background:transparent;color:inherit;font:inherit;font-weight:600;padding:5px 10px;cursor:pointer;min-width:34px}
 .seg button+button{border-left:1px solid var(--line)}
@@ -730,6 +735,23 @@ background:transparent;color:inherit;font:inherit;font-size:11px;padding:3px 7px
  <button class="chip on" id="t_rs" style="--c:#16a34a" title="Price relative to the benchmark index"><i></i>RS line</button>
  <button class="chip on" id="t_base" style="--c:#3b82f6" title="Detected bases, numbered oldest first"><i class="b"></i>Bases</button>
 </div>
+<div id="tools" title="Optional drawing tools. Right-click a drawing to delete it.">
+  <span class="tl">Draw</span>
+  <button type="button" class="on" data-tool="cursor" title="Cursor — select and move drawings">↖</button>
+  <button type="button" data-tool="trend" title="Trend line — click start and end">╱</button>
+  <button type="button" data-tool="hline" title="Horizontal price line — click once">━</button>
+  <button type="button" data-tool="vline" title="Vertical date line — click once">│</button>
+  <button type="button" data-tool="rect" title="Rectangle — click two corners">▭</button>
+  <button type="button" data-tool="fib" title="Fibonacci retracement — click two points">Fib</button>
+  <button type="button" data-tool="measure" title="Measure move — click two points">%</button>
+  <button type="button" data-tool="text" title="Text label — click to place">T</button>
+  <span class="tsep"></span>
+  <button type="button" id="umag" title="Snap new drawings to nearby candles">Magnet</button>
+  <button type="button" id="uundo" title="Undo (Ctrl+Z)">↶</button>
+  <button type="button" id="uredo" title="Redo (Ctrl+Y)">↷</button>
+  <button type="button" id="udel" title="Delete the last drawing (right-click any drawing to delete it)">⌫</button>
+  <button type="button" id="uclear" title="Clear all drawings on this symbol and timeframe">Clear</button>
+</div>
 </div>
 <div id="wrap"><div id="lg"></div><div id="chart"></div></div>
 <div id="ft"></div>
@@ -742,7 +764,17 @@ const SPANS={D:{'3M':63,'6M':126,'1Y':252,'2Y':504,'5Y':1260},W:{'3M':13,'6M':26
 const RLIST=['3M','6M','1Y','2Y','5Y'],PERIOD={D:'day',W:'week',M:'month'};
 const MAS=[10,20,50,150,200];
 const on={s10:true,s20:true,s50:true,s150:true,s200:true,vol:true,rs:true,base:true};
+const DRAW_GID='mpDraw';
+const TOOLS={
+  trend:{name:'segment',styles:{line:{color:'#f59e0b',size:1.8}}},
+  hline:{name:'horizontalStraightLine',styles:{line:{color:'#f59e0b',size:1.3,style:'dashed',dashedValue:[4,3]},text:{color:'#f59e0b'}}},
+  vline:{name:'verticalStraightLine',styles:{line:{color:'#8b5cf6',size:1.3,style:'dashed',dashedValue:[4,3]},text:{color:'#8b5cf6'}}},
+  rect:{name:'mpRect'},fib:{name:'fibonacciLine'},measure:{name:'mpMeasure'},text:{name:'mpText'}
+};
+const NEED={segment:2,fibonacciLine:2,mpRect:2,mpMeasure:2};
+const needPts=n=>NEED[n]||1;
 let chart=null,tf='D',rng=RLIST.includes(P.range)?P.range:'1Y',data=P.bars,dark=false,rsBase=0,pal={};
+let magnetOn=false,activeTool='cursor',hist=[],future=[],lastSnap='';
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt=v=>v==null?'–':Number(v).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
 const sgn=(v,d=1)=>(v>=0?'+':'−')+Math.abs(v).toFixed(d);
@@ -840,6 +872,74 @@ MAS.forEach(n=>{
 });
 const dropInd=k=>chart.removeIndicator(DEL[k]?{name:DEL[k]}:{id:'sma'+k.slice(1)});
 
+/* ---------- optional drawing tools (isolated from scan/chart logic) ---------- */
+function drawKey(){return 'mpDrawings:'+String(P.symbol||'')+':'+String(tf);}
+function readSaved(){try{const v=JSON.parse(localStorage.getItem(drawKey())||'[]');return Array.isArray(v)?v:[];}catch(e){return [];}}
+function writeSaved(v){try{localStorage.setItem(drawKey(),JSON.stringify(v||[]));}catch(e){}}
+function drawOverlays(){try{return chart?(chart.getOverlays({groupId:DRAW_GID})||[]):[];}catch(e){return [];}}
+function dropIncomplete(){drawOverlays().forEach(o=>{if((o.points||[]).length<needPts(o.name))try{chart.removeOverlay({id:o.id});}catch(e){}});}
+function serializeDraw(){
+  const out=[];
+  drawOverlays().forEach(o=>{
+    const pts=(o.points||[]).filter(p=>p&&typeof p.timestamp==='number').map(p=>({timestamp:p.timestamp,value:p.value,dataIndex:p.dataIndex}));
+    if(pts.length<needPts(o.name))return;
+    const item={name:o.name,points:pts,mode:o.mode||'normal'};
+    if(o.extendData!==undefined)item.extendData=o.extendData;
+    if(o.styles)item.styles=o.styles;
+    out.push(item);
+  });
+  return out;
+}
+function restoreDraw(list){
+  if(!chart)return;
+  try{chart.removeOverlay({groupId:DRAW_GID});}catch(e){}
+  (list||[]).forEach(o=>{
+    try{chart.createOverlay({name:o.name,groupId:DRAW_GID,mode:o.mode||'normal',points:o.points,extendData:o.extendData,styles:o.styles});}catch(e){}
+  });
+}
+function persistIfChanged(){
+  const cur=serializeDraw(),k=JSON.stringify(cur);
+  if(k===lastSnap)return;
+  writeSaved(cur);hist.push(cur);if(hist.length>60)hist.shift();future=[];lastSnap=k;
+}
+function commitDraw(){setTimeout(persistIfChanged,0);}
+function undoDraw(){
+  if(hist.length<2)return;
+  future.push(hist.pop());const s=hist[hist.length-1];restoreDraw(s);writeSaved(s);
+  const cur=serializeDraw();hist[hist.length-1]=cur;lastSnap=JSON.stringify(cur);
+}
+function redoDraw(){
+  if(!future.length)return;
+  const s=future.pop();hist.push(s);restoreDraw(s);writeSaved(s);
+  const cur=serializeDraw();hist[hist.length-1]=cur;lastSnap=JSON.stringify(cur);
+}
+function deleteDraw(){
+  const list=drawOverlays();if(!list.length)return;
+  try{chart.removeOverlay({id:list[list.length-1].id});}catch(e){}
+  commitDraw();
+}
+function clearDraw(){try{chart.removeOverlay({groupId:DRAW_GID});}catch(e){}commitDraw();}
+function setActiveTool(t){
+  activeTool=t;
+  document.querySelectorAll('#tools [data-tool]').forEach(b=>b.classList.toggle('on',b.dataset.tool===t));
+  $('chart').style.cursor=t==='cursor'?'default':'crosshair';
+}
+function startDraw(t){
+  if(!chart||t==='cursor'){setActiveTool('cursor');return;}
+  const cfg=TOOLS[t];if(!cfg)return;
+  dropIncomplete();
+  let ext;
+  if(t==='text'){
+    try{ext=window.prompt('Text label','Label');}catch(e){ext='Label';}
+    if(ext==null||!String(ext).trim()){setActiveTool('cursor');return;}
+  }
+  const o={name:cfg.name,groupId:DRAW_GID,mode:magnetOn?'weak_magnet':'normal',
+    onDrawEnd:()=>setTimeout(()=>{setActiveTool('cursor');commitDraw();},0)};
+  if(cfg.styles)o.styles=cfg.styles;
+  if(ext!=null)o.extendData=String(ext);
+  try{chart.createOverlay(o);setActiveTool(t);}catch(e){setActiveTool('cursor');}
+}
+
 /* ---------- bases ---------- */
 const tsOf=s=>{const a=s.split('-').map(Number);return Date.UTC(a[0],a[1]-1,a[2])-330*60000};
 function drawBases(){
@@ -882,9 +982,15 @@ function setRange(r){
   if(on.rs&&nb!==rsBase){rsBase=nb;try{chart.removeIndicator({name:'MP_RS_LINE'});IND.rs();}catch(e){}}else rsBase=nb;
 }
 function setTF(t){
+  if(t===tf)return;
+  writeSaved(serializeDraw());
   tf=t;data=aggregate(t);document.querySelectorAll('#tf button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
   rsBase=0;chart.setPeriod({span:1,type:PERIOD[t]});
-  setTimeout(()=>{drawBases();setRange(rng);legend();},160);
+  setTimeout(()=>{
+    drawBases();restoreDraw(readSaved());
+    const cur=serializeDraw();hist=[cur];future=[];lastSnap=JSON.stringify(cur);
+    setRange(rng);legend();
+  },160);
 }
 
 /* ---------- start ---------- */
@@ -927,6 +1033,32 @@ function start(){
         out.push({type:'text',attrs:{x:left?x0+28:bounding.width-6,y:y0-9,text:d.label,align:left?'left':'right',baseline:'middle'},styles:{color:blue,size:11,backgroundColor:'transparent',borderSize:0}});}
       return out;
     }});}catch(e){}
+  try{klinecharts.registerOverlay({name:'mpRect',totalStep:3,needDefaultPointFigure:true,needDefaultXAxisFigure:false,needDefaultYAxisFigure:false,
+    createPointFigures:({coordinates})=>{
+      if(!coordinates||coordinates.length<2)return [];
+      const a=coordinates[0],b=coordinates[1];
+      return {type:'rect',attrs:{x:Math.min(a.x,b.x),y:Math.min(a.y,b.y),width:Math.max(2,Math.abs(a.x-b.x)),height:Math.max(2,Math.abs(a.y-b.y))},
+        styles:{style:'stroke',color:'#f59e0b',borderColor:'#f59e0b',size:1.6}};
+    }});}catch(e){}
+  try{klinecharts.registerOverlay({name:'mpText',totalStep:2,needDefaultPointFigure:false,needDefaultXAxisFigure:false,needDefaultYAxisFigure:false,
+    createPointFigures:({coordinates,overlay})=>{
+      if(!coordinates||!coordinates.length)return [];
+      return {type:'text',attrs:{x:coordinates[0].x+8,y:coordinates[0].y-8,text:String(overlay.extendData||''),baseline:'bottom'},
+        styles:{color:'#f59e0b',size:12,backgroundColor:'transparent',borderSize:0}};
+    }});}catch(e){}
+  try{klinecharts.registerOverlay({name:'mpMeasure',totalStep:3,needDefaultPointFigure:true,needDefaultXAxisFigure:true,needDefaultYAxisFigure:true,
+    createPointFigures:({coordinates,overlay})=>{
+      if(!coordinates||coordinates.length<2)return [];
+      const a=overlay.points[0]||{},b=overlay.points[1]||{};let txt='';
+      if(typeof a.value==='number'&&typeof b.value==='number'&&a.value){
+        const pct=(b.value/a.value-1)*100,bars=Math.abs((b.dataIndex||0)-(a.dataIndex||0));
+        txt=(pct>=0?'+':'')+pct.toFixed(2)+'% · '+bars+' bars';
+      }
+      const mid={x:(coordinates[0].x+coordinates[1].x)/2,y:(coordinates[0].y+coordinates[1].y)/2};
+      const out=[{type:'line',attrs:{coordinates},styles:{color:'#0ea5e9',size:1.4,style:'dashed',dashedValue:[4,3]}}];
+      if(txt)out.push({type:'text',attrs:{x:mid.x,y:mid.y-8,text:txt,align:'center',baseline:'bottom'},styles:{color:'#0ea5e9',size:11,backgroundColor:'transparent',borderSize:0}});
+      return out;
+    }});}catch(e){}
   chart=klinecharts.init('chart');chart.setTimezone('Asia/Kolkata');chart.setStyles(chartStyles());
   chart.setSymbol({ticker:P.symbol,pricePrecision:2,volumePrecision:0});chart.setPeriod({span:1,type:'day'});
   chart.setLocale('en-US');chart.setDataLoader({getBars:({callback})=>callback(data)});
@@ -938,7 +1070,12 @@ function start(){
     legend(typeof i==='number'&&i>=0&&i<data.length?i:undefined);
   });
   $('chart').addEventListener('mouseleave',()=>legend());
-  setTimeout(()=>{drawBases();setRange(rng);legend();},250);
+  $('chart').addEventListener('mouseup',()=>setTimeout(commitDraw,40));
+  setTimeout(()=>{
+    drawBases();restoreDraw(readSaved());
+    const cur=serializeDraw();hist=[cur];future=[];lastSnap=JSON.stringify(cur);
+    setRange(rng);legend();
+  },250);
   new ResizeObserver(()=>{chart.resize();setRange(rng);}).observe($('chart'));
 }
 $('rng').innerHTML=RLIST.map(r=>'<button type="button" data-r="'+r+'">'+r+'</button>').join('');
@@ -964,6 +1101,22 @@ $('zout').onclick=()=>{const b=chart.getBarSpace().bar;chart.setBarSpace(Math.ma
   try{if(on[k])IND[k]();else dropInd(k);}catch(e){}
   setTimeout(()=>setRange(rng),30);
 });
+$('tools').onclick=e=>{
+  const b=e.target&&e.target.closest?e.target.closest('button'):null;if(!b)return;
+  if(b.dataset.tool){startDraw(b.dataset.tool);return;}
+  if(b.id==='umag'){magnetOn=!magnetOn;b.classList.toggle('on',magnetOn);b.title=magnetOn?'Snap to candles: on':'Snap to candles: off';return;}
+  if(b.id==='uundo')undoDraw();
+  else if(b.id==='uredo')redoDraw();
+  else if(b.id==='udel')deleteDraw();
+  else if(b.id==='uclear')clearDraw();
+};
+document.addEventListener('keydown',e=>{
+  const k=(e.key||'').toLowerCase();
+  if((e.ctrlKey||e.metaKey)&&k==='z'){e.preventDefault();e.shiftKey?redoDraw():undoDraw();}
+  else if((e.ctrlKey||e.metaKey)&&k==='y'){e.preventDefault();redoDraw();}
+  else if(k==='escape')setActiveTool('cursor');
+});
+window.addEventListener('beforeunload',()=>writeSaved(serializeDraw()));
 document.querySelectorAll('#tf button').forEach(b=>b.classList.toggle('on',b.dataset.t===tf));
 document.querySelectorAll('#rng button').forEach(b=>b.classList.toggle('on',b.dataset.r===rng));
 start();
