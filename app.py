@@ -31,6 +31,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import nse500_rs_rating as m  # noqa: E402
 import ui  # noqa: E402
+# --- FUNDAMENTALS PANEL START (rollback-safe) ---
+import fundamentals_panel as fp  # noqa: E402
+# --- FUNDAMENTALS PANEL END ---
 
 CACHE_HOURS = 6
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -1321,6 +1324,9 @@ def _show_symbol_chart_dialog(symbol: str) -> None:
     row_match = result[result["Symbol"].astype(str) == symbol]
     row = row_match.iloc[0] if not row_match.empty else None
     info = _chart_info(symbol, row, bars, payload["benchmark"])
+    # --- FUNDAMENTALS PANEL START (rollback-safe) ---
+    company_name = str(row.get("Company Name", "")) if row is not None else ""
+    # --- FUNDAMENTALS PANEL END ---
     as_of = datetime.strptime(payload["dates"][-1], "%Y-%m-%d").date()
     footer = (f"Chart and indicators: end-of-day data as of {as_of:%Y-%m-%d} · NSE / Yahoo Finance · "
               "may contain errors · research and education only")
@@ -1335,8 +1341,14 @@ def _show_symbol_chart_dialog(symbol: str) -> None:
 
     # Charts are fully automatic: only the scanner's detected bases are drawn.
     with chart_slot:
+        # --- FUNDAMENTALS PANEL START (rollback-safe) ---
+        fp.render_launcher(symbol, context="chart_dialog")
+        # --- FUNDAMENTALS PANEL END ---
         ui.chart_explorer(bars, symbol, "", "", 0.0,
                           payload["base_history"], visible_window="1Y", info=info, footer=footer)
+    # --- FUNDAMENTALS PANEL START (rollback-safe) ---
+    fp.render_if_requested(symbol, company_name)
+    # --- FUNDAMENTALS PANEL END ---
     if not _DIALOG_HAS_DISMISS and st.button("Close chart", key=f"close_chart_dialog_{symbol}"):
         _clear_chart_request()
         st.rerun()
@@ -1527,9 +1539,15 @@ elif active_screen == "chart":
         info = _chart_info(chart_symbol, stock_row, loaded["bars"], loaded["benchmark"])
         range_default = {"1y": "1Y", "2y": "2Y", "5y": "5Y"}.get(chart_period, "2Y")
         visible_window = range_default  # initial zoom; the chart has its own range buttons
+        # --- FUNDAMENTALS PANEL START (rollback-safe) ---
+        fp.render_launcher(chart_symbol, context="chart_explorer")
+        # --- FUNDAMENTALS PANEL END ---
         # RS Rating + RS-line changes live in the chart header, so both chart views match.
         ui.chart_explorer(loaded["bars"], chart_symbol, "", "", 0.0,
                           loaded.get("base_history", []), visible_window=visible_window, info=info)
+        # --- FUNDAMENTALS PANEL START (rollback-safe) ---
+        fp.render_if_requested(chart_symbol, str(names.get(chart_symbol, "") or ""))
+        # --- FUNDAMENTALS PANEL END ---
         page_table = _base_table_html(loaded.get("base_history", []), vcp_pivot=info.get("vcpPivot"),
                                       vcp_contractions=info.get("vcpContractions", ""))
         if page_table:
