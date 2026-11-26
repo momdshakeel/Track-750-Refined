@@ -274,6 +274,31 @@ z-index:90;box-shadow:0 8px 24px rgba(0,0,0,.3);cursor:default}
   .kpi .v{font-size:1.16rem}.kpi .l{font-size:.57rem}.kpi .s{font-size:.6rem}
   .meter .mn{font-size:.65rem}.chip{font-size:.66rem}
 }
+/* --- DESKTOP FILTER STRIP SCROLL START (rollback-safe) --- */
+/* Keep the screen/filter strip on one line at desktop widths too. Mobile keeps
+   its hidden-scrollbar swipe; desktop gets a thin visible bar for mouse/trackpad. */
+@media (min-width:641px){
+  .st-key-screen-tabs [role="radiogroup"],
+  .st-key-screen-tabs [role="tablist"]{
+    flex-wrap:nowrap!important;
+    overflow-x:auto!important;
+    overflow-y:hidden!important;
+    scroll-snap-type:x proximity;
+    scrollbar-width:thin;
+    scrollbar-color:color-mix(in srgb,var(--mp-accent) 55%,var(--mp-line)) transparent;
+    -webkit-overflow-scrolling:touch;
+  }
+  .st-key-screen-tabs [role="radiogroup"]::-webkit-scrollbar,
+  .st-key-screen-tabs [role="tablist"]::-webkit-scrollbar{display:block!important;height:6px!important}
+  .st-key-screen-tabs [role="radiogroup"]::-webkit-scrollbar-track,
+  .st-key-screen-tabs [role="tablist"]::-webkit-scrollbar-track{background:transparent}
+  .st-key-screen-tabs [role="radiogroup"]::-webkit-scrollbar-thumb,
+  .st-key-screen-tabs [role="tablist"]::-webkit-scrollbar-thumb{
+    background:color-mix(in srgb,var(--mp-accent) 48%,var(--mp-line));border-radius:99px}
+  .st-key-screen-tabs [role="radiogroup"]>*,
+  .st-key-screen-tabs [role="tablist"]>{flex:none!important;scroll-snap-align:start}
+}
+/* --- DESKTOP FILTER STRIP SCROLL END --- */
 </style>
 """
 
