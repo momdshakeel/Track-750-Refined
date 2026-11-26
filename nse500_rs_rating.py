@@ -151,6 +151,14 @@ UP_DOWN_VOLUME_DOMINANT = 1.25
 DOWN_UP_VOLUME_DOMINANT = 0.80
 EXTENSION_WARN_PCT = 10.0        # flag price >=10% above its 50-day average
 
+# --- MINERVINI PRO START (rollback-safe: additive columns only) ---
+SMA200_RISING_PRO_DAYS = 63      # ~3 months for the stricter 200 SMA slope test
+HIGH_52W_RECENT_DAYS = 126       # ~6 months for "52-week high made recently"
+ATR_PERIOD = 14
+ATR_STOP_MULTIPLE = 2.0
+MAX_ATR_STOP_PCT = 10.0
+# --- MINERVINI PRO END ---
+
 
 # ---------------- 1. Universe ----------------
 _HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
@@ -306,6 +314,15 @@ def technicals(prices, bench, rs_now):
     s50, s150, s200 = sma50.iloc[-1], sma150.iloc[-1], sma200.iloc[-1]
     s200_prev = sma200.iloc[-1 - SMA200_RISING_DAYS]
 
+    # --- MINERVINI PRO START (rollback-safe) ---
+    # Additive only: the original 1-month TT3 condition above is unchanged.
+    if len(sma200) > SMA200_RISING_PRO_DAYS:
+        s200_prev_pro = sma200.iloc[-1 - SMA200_RISING_PRO_DAYS]
+        sma200_up_3m = s200 > s200_prev_pro
+    else:
+        sma200_up_3m = pd.Series(False, index=idx)
+    # --- MINERVINI PRO END ---
+
     # Broad-market gate for the Momentum Candidates screen. This uses the same
     # benchmark series as RS calculations (Nifty 500, with Nifty 50 fallback).
     market = pd.Series(bench).dropna()
@@ -319,6 +336,18 @@ def technicals(prices, bench, rs_now):
 
     win = p.iloc[-TRADING_DAYS_52W:]
     hi52, lo52 = win.max(), win.min()
+
+    # --- MINERVINI PRO START (rollback-safe) ---
+    # Sessions since the 52-week high. The standard template only uses distance
+    # from the high; this additive column records when the high was made.
+    try:
+        high_pos = np.nanargmax(win.to_numpy(float), axis=0)
+        high_days = pd.Series(len(win) - 1 - high_pos, index=idx, dtype=float)
+    except ValueError:
+        high_days = pd.Series(np.nan, index=idx)
+    high_recent_6m = high_days <= HIGH_52W_RECENT_DAYS
+    high_recent_4m = high_days <= 84   # ~4 months, used as a stricter optional flag
+    # --- MINERVINI PRO END ---
 
     # --- 8 Trend Template conditions (NaN comparisons evaluate to False) ---
     c1 = (last > s150) & (last > s200)
@@ -359,6 +388,12 @@ def technicals(prices, bench, rs_now):
         "Pct_Above_50SMA": ((last / s50 - 1) * 100).round(1),
         "Pct_From_52W_High": ((last / hi52 - 1) * 100).round(1),
         "Pct_Above_52W_Low": ((last / lo52 - 1) * 100).round(1),
+        # --- MINERVINI PRO START (rollback-safe) ---
+        "SMA200_Rising_63D": sma200_up_3m,
+        "High_52W_Days_Ago": high_days,
+        "High_52W_Recent_6M": high_recent_6m,
+        "High_52W_Recent_4M": high_recent_4m,
+        # --- MINERVINI PRO END ---
         "SMA50": s50.round(2), "SMA150": s150.round(2), "SMA200": s200.round(2),
         "RSI14": rsi_wilder(p).iloc[-1].round(1),
         "Chg_1D_%": ((last / p.iloc[-2] - 1) * 100).round(2),
@@ -528,6 +563,21 @@ def pattern_table(prices, ohlcv, idx):
     volume_pressure[up_down_ratio >= UP_DOWN_VOLUME_DOMINANT] = "Up-volume dominant"
     volume_pressure[up_down_ratio <= DOWN_UP_VOLUME_DOMINANT] = "Down-volume dominant"
     volume_pressure[(down_volume == 0) & (up_volume > 0)] = "Up-volume dominant"
+
+    # --- MINERVINI PRO START (rollback-safe: additive columns only) ---
+    # ATR(14) and the X-post stop: 2 x ATR, capped at a 10% distance.
+    prev_close = p.shift(1)
+    true_range = pd.concat([(high - low).abs(),
+                            (high - prev_close).abs(),
+                            (low - prev_close).abs()], axis=0).groupby(level=0).max().reindex(p.index)
+    atr = true_range.rolling(ATR_PERIOD).mean().iloc[-1]
+    atr_stop = (last - ATR_STOP_MULTIPLE * atr).clip(lower=last * (1 - MAX_ATR_STOP_PCT / 100.0))
+    atr_stop_dist = ((last - atr_stop) / last * 100).where(last > 0).round(1)
+    day_change = p.diff()
+    green_days = (day_change > 0).iloc[-20:].sum()
+    red_days = (day_change < 0).iloc[-20:].sum()
+    # --- MINERVINI PRO END ---
+
     vcp_setup = vcp & dry & (pct_to_pivot >= 0) & (pct_to_pivot <= VCP_NEAR_PIVOT)
 
     # --- volume breakout in the last few sessions ---
@@ -580,6 +630,13 @@ def pattern_table(prices, ohlcv, idx):
         "Breakout_Vol_x": brk_vol.round(2), "Vol_x_50d": vol_x_today,
         "Up_Down_Vol_Ratio_20D": up_down_ratio,
         "Volume_Pressure_20D": volume_pressure,
+        # --- MINERVINI PRO START (rollback-safe) ---
+        "ATR14": atr.round(2),
+        "ATR_Stop_2x": atr_stop.round(2),
+        "ATR_Stop_Distance_%": atr_stop_dist,
+        "Green_Days_20D": green_days.astype(int),
+        "Red_Days_20D": red_days.astype(int),
+        # --- MINERVINI PRO END ---
     })
 
 

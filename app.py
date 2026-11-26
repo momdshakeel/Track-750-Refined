@@ -476,10 +476,40 @@ def _vcp_breakout_frame(frame):
             .drop(columns="_rs_sort"))
 
 
+# --- MINERVINI PRO START (rollback-safe helpers) ---
+def _series_flag(series, index, default=False):
+    """Interpret an optional scanner column as a boolean Series."""
+    if series is None:
+        return pd.Series(default, index=index)
+    if pd.api.types.is_bool_dtype(series):
+        return series.fillna(default).astype(bool)
+    return (series.astype(str).str.strip().str.lower()
+            .isin({"true", "1", "1.0", "yes"}).fillna(default))
+
+
+def _vcp_contraction_stats(series):
+    """Parse VCP text like '21→6→5' into (leg count, largest step ratio)."""
+    def parse(value):
+        try:
+            levels = [int(x) for x in re.findall(r"\d+", str(value)) if int(x) > 0]
+        except (TypeError, ValueError):
+            levels = []
+        if len(levels) < 2:
+            return 0, np.nan
+        return len(levels), max(b / a for a, b in zip(levels, levels[1:]))
+
+    parsed = series.fillna("").astype(str).map(parse)
+    return parsed.map(lambda x: x[0]).astype(int), parsed.map(lambda x: x[1])
+# --- MINERVINI PRO END ---
+
+
 ENTRY_PRESETS = {
     "Strict":   dict(rs=80, tt=7, sec=60, ext=12, brk=3, pivot=5),
     "Balanced": dict(rs=80, tt=6, sec=55, ext=15, brk=5, pivot=5),
     "Relaxed":  dict(rs=75, tt=6, sec=50, ext=18, brk=5, pivot=7),
+    # --- MINERVINI PRO START (rollback-safe) ---
+    "Minervini Pro": dict(rs=80, tt=8, sec=60, ext=12, brk=3, pivot=5, pro=True),
+    # --- MINERVINI PRO END ---
 }
 
 
@@ -488,6 +518,9 @@ def _entry_candidates(frame, preset):
     if frame is None or frame.empty:
         return frame
     cfg = ENTRY_PRESETS.get(preset, ENTRY_PRESETS["Balanced"])
+    # --- MINERVINI PRO START (rollback-safe) ---
+    is_pro = bool(cfg.get("pro", False))
+    # --- MINERVINI PRO END ---
     out = frame.copy()
     idx = out.index
 
@@ -501,6 +534,28 @@ def _entry_candidates(frame, preset):
         if pd.api.types.is_bool_dtype(series):
             return series.fillna(False).astype(bool)
         return series.astype(str).str.strip().str.lower().isin({"true", "1", "1.0", "yes"}).fillna(False)
+
+    # --- MINERVINI PRO START (rollback-safe) ---
+    pro_extra = pd.Series(True, index=idx)
+    vcp_legs, vcp_step = _vcp_contraction_stats(
+        out.get("VCP_Contractions", pd.Series("", index=idx)))
+    if is_pro:
+        # Hard rules from the X post that can be checked with existing scan data.
+        pro_extra &= num("Close") >= 30
+        pro_extra &= num("Pct_From_52W_High") >= -25
+        pro_extra &= num("Pct_Above_52W_Low") >= 100
+        pro_extra &= num("TT_Score") >= 8
+        # Prefer the new 3-month slope column when a rescan provides it; until then
+        # the existing 1-month Trend Template condition is used.
+        if "SMA200_Rising_63D" in out.columns:
+            pro_extra &= _series_flag(out["SMA200_Rising_63D"], idx)
+        else:
+            pro_extra &= flag("TT3_200SMA_up")
+        # 52-week high recency is additive: it is only enforced once a rescan
+        # provides the column, so today's data file keeps working.
+        if "High_52W_Recent_6M" in out.columns:
+            pro_extra &= _series_flag(out["High_52W_Recent_6M"], idx)
+    # --- MINERVINI PRO END ---
 
     market_ok = bool(flag("Market_Trend_OK").all()) if "Market_Trend_OK" in out.columns else True
     rs, tt, sec = num("RS_Rating"), num("TT_Score"), num("Sector_Strength")
@@ -524,6 +579,10 @@ def _entry_candidates(frame, preset):
     quality = (flag("Liquid") & (num("Stage_Num") == 2) & (rs >= cfg["rs"]) & (tt >= cfg["tt"])
                & (sec >= cfg["sec"]) & (above50 > 0) & (above50 <= cfg["ext"]) & flag("RS_Line_Uptrend"))
     keep = quality & (fresh | at_pivot) & market_ok
+    # --- MINERVINI PRO START (rollback-safe) ---
+    if is_pro:
+        keep &= pro_extra
+    # --- MINERVINI PRO END ---
 
     # Transparent 0-100 score: leader quality 60, entry position 20, volume 10, RS momentum 10.
     score = pd.Series(np.select(
@@ -558,8 +617,25 @@ def _entry_candidates(frame, preset):
     score -= pd.Series(np.select([above50 > 15, above50 > 12, above50 > 9],
                                  [10, 6, 3], default=0), index=idx)
 
+    # --- MINERVINI PRO START (rollback-safe) ---
+    # VCP depth is a preference, not a hard filter: the X post calls 3 legs and
+    # 50% tightening "ideals", so they add score instead of removing names.
+    if is_pro:
+        score += pd.Series(np.select([vcp_legs >= 3, vcp_legs == 2], [6, 3], default=0), index=idx)
+        score += pd.Series(np.select([vcp_step <= 0.5, vcp_step <= 0.7], [5, 2], default=0), index=idx)
+        score += (flag("VCP_Vol_Contracting") | flag("Vol_Dry_Up")).astype(int) * 3
+        score += pressure.str.contains("Up-volume", na=False).astype(int) * 2
+        score += (num("Green_Days_20D") > num("Red_Days_20D")).astype(int) * 2
+    # --- MINERVINI PRO END ---
+
     close, pivot, sma50 = num("Close"), num("Pivot"), num("SMA50")
     stop = (pivot * 0.92).where(pivot > 0, sma50 * 0.95)
+    # --- MINERVINI PRO START (rollback-safe) ---
+    # Only the new preset switches to the X-post ATR stop (2 x ATR, max 10%).
+    if is_pro and "ATR_Stop_Distance_%" in out.columns:
+        atr_stop = close * (1 - num("ATR_Stop_Distance_%") / 100)
+        stop = atr_stop.where(atr_stop.notna(), stop)
+    # --- MINERVINI PRO END ---
     stop_dist = ((close - stop) / close * 100).where((close > 0) & (stop > 0)).clip(0, 25).round(1)
 
     reasons = []
@@ -579,6 +655,14 @@ def _entry_candidates(frame, preset):
         for value, label in ((rs.loc[sym], "RS"), (tt.loc[sym], "TT"), (sec.loc[sym], "Sec")):
             if pd.notna(value):
                 bits.append(f"{label} {int(value)}" + ("/8" if label == "TT" else ""))
+        # --- MINERVINI PRO START (rollback-safe) ---
+        if is_pro:
+            bits.append("Minervini Pro")
+            if int(vcp_legs.loc[sym]) >= 3:
+                bits.append("3 VCP legs")
+            if pd.notna(vcp_step.loc[sym]) and float(vcp_step.loc[sym]) <= 0.5:
+                bits.append("50% tightening")
+        # --- MINERVINI PRO END ---
         reasons.append(" · ".join(bits))
 
     out["Entry_Score"] = score.round().clip(0, 100).astype(int)
@@ -1599,9 +1683,16 @@ elif active_screen == "entry":
         entry_preset = st.segmented_control(
             "Entry preset", list(ENTRY_PRESETS), key="entry_preset", default="Balanced",
             label_visibility="collapsed",
-            help="Strict = highest quality and tightest timing. Relaxed = more names, looser quality and risk limits.",
+            help="Strict = highest quality and tightest timing. Relaxed = more names, looser quality and risk limits. "
+                 "Minervini Pro = X-post rules: ₹30+, 100% above 52-week low, full 8/8 Trend Template.",
         )
     cfg = ENTRY_PRESETS[entry_preset]
+    # --- MINERVINI PRO START (rollback-safe) ---
+    pro_note = (" <b>Minervini Pro</b> adds ₹30+, ≥100% above the 52-week low, a full 8/8 Trend Template, "
+                "a 3-month rising 200 SMA and a recent 52-week high when those scan columns are available. "
+                "Three VCP legs and 50% tightening add score rather than removing names.") \
+        if entry_preset == "Minervini Pro" else ""
+    # --- MINERVINI PRO END ---
     market_gate = (bool(result["Market_Trend_OK"].fillna(False).astype(bool).all())
                    if "Market_Trend_OK" in result.columns else True)
     if not market_gate:
@@ -1613,7 +1704,7 @@ elif active_screen == "entry":
          f"sector strength ≥ {cfg['sec']}, no more than {cfg['ext']}% above the 50-day average, and either within "
          f"{cfg['pivot']}% of the pivot or a breakout no older than {cfg['brk']} sessions. "
          "Score = leader quality 60 + entry position 20 + volume 10 + RS momentum 10, less an extension penalty. "
-         "Continue sorting by score, then confirm on the chart.",
+         f"{pro_note} Continue sorting by score, then confirm on the chart.",
          ui.COLS_ENTRY, ("Entry_Score", -1),
          titles={"Pivot": "Entry pivot", "Pct_To_Pivot": "To pivot",
                  "Stop_Distance_%": "Stop %", "Entry_Reason": "Why"},
@@ -1785,8 +1876,10 @@ else:
         <b>Recent breakouts</b> inside the tab. Auto-marked charts show <b>Base pivot</b> and <b>VCP pivot</b>
         separately. A pivot is a level to watch; wait for chart confirmation rather than treating proximity as a signal.</p></div>
         <div class="guide-card"><h4>Entry candidates</h4><p>A ranked shortlist combining RS, Trend Template, sector
-        strength, a fresh pivot/breakout, volume and extension risk. Use <b>Strict</b>, <b>Balanced</b> or
-        <b>Relaxed</b> to control selectivity; Balanced is the default. Confirm the chart and risk level before acting.</p></div>
+        strength, a fresh pivot/breakout, volume and extension risk. Use <b>Strict</b>, <b>Balanced</b>,
+        <b>Relaxed</b> or <b>Minervini Pro</b> to control selectivity; Balanced is the default.
+        Minervini Pro adds the stricter X-post rules without changing the other presets.
+        Confirm the chart and risk level before acting.</p></div>
         <div class="guide-card"><h4>Stage 1 bases</h4><p>Stocks around a flat 150-day average with a sideways base.
         These are early watch-list candidates; the scanner does not call a base a confirmed uptrend.</p></div>""",
                     unsafe_allow_html=True)
