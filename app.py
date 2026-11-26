@@ -672,6 +672,75 @@ def _entry_candidates(frame, preset):
     return out.loc[keep].sort_values(["Entry_Score", "RS_Rating"], ascending=[False, False])
 
 
+# --- MASTER LIST START (rollback-safe helper) ---
+CONFLUENCE_WEIGHTS = {
+    "Top Picks": 12,
+    "Momentum Leader": 10,
+    "Trend Template": 10,
+    "VCP Setup": 12,
+    "VCP Breakout": 10,
+    "Entry Candidates": 14,
+    "Volume Breakout": 8,
+    "Stage 1 Bases": 5,
+    "RS Blue Dot": 8,
+    "Minervini Pro": 13,
+}
+
+
+def _build_confluence_frame(base, sources):
+    """One row per symbol, with weighted membership tags and an A/B/C tier."""
+    if base is None or base.empty or "Symbol" not in base.columns:
+        empty = base.iloc[0:0].copy() if base is not None else pd.DataFrame()
+        for col in ("Confluence_Score", "Tier", "Filter_Count", "In_Filters"):
+            empty[col] = pd.Series(dtype=object)
+        return empty
+
+    tags, weights = {}, {}
+    for label, frame, weight in sources:
+        if frame is None or frame.empty:
+            continue
+        if "Symbol" in frame.columns:
+            symbols = frame["Symbol"].dropna().astype(str).unique()
+        else:
+            symbols = pd.Series(frame.index.dropna().astype(str)).unique()
+        for sym in symbols:
+            tags.setdefault(sym, []).append(label)
+            weights[sym] = weights.get(sym, 0) + weight
+    if not tags:
+        empty = base.iloc[0:0].copy()
+        for col in ("Confluence_Score", "Tier", "Filter_Count", "In_Filters"):
+            empty[col] = pd.Series(dtype=object)
+        return empty
+
+    def num(col):
+        return (pd.to_numeric(base[col], errors="coerce") if col in base.columns
+                else pd.Series(np.nan, index=base.index))
+
+    def flag(col):
+        return _series_flag(base[col], base.index) if col in base.columns else pd.Series(False, index=base.index)
+
+    syms = base["Symbol"].astype(str)
+    rs = num("RS_Rating").fillna(0)
+    tt = num("TT_Score").fillna(0)
+    sec = num("Sector_Strength").fillna(0)
+    quality = (rs * 0.25 + (tt / 8) * 20 + sec * 0.10
+               + num("Stage_Num").eq(2).astype(int) * 5
+               + flag("RS_Line_Uptrend").astype(int) * 5)
+    signal = syms.map(weights).fillna(0) * 1.2
+    score = (quality + np.minimum(signal, 35)).clip(0, 100).round().astype(int)
+    tier = np.select([score >= 85, score >= 70], ["A", "B"], default="C")
+
+    out = base[syms.isin(tags)].drop_duplicates(subset="Symbol", keep="first").copy()
+    out_syms = out["Symbol"].astype(str)
+    out["Confluence_Score"] = out_syms.map(dict(zip(syms, score))).astype(int)
+    out["Tier"] = out_syms.map(dict(zip(syms, tier)))
+    out["Filter_Count"] = out_syms.map({k: len(v) for k, v in tags.items()}).astype(int)
+    out["In_Filters"] = out_syms.map({k: " · ".join(v) for k, v in tags.items()})
+    return out.sort_values(["Confluence_Score", "RS_Rating", "Filter_Count"],
+                           ascending=[False, False, False])
+# --- MASTER LIST END ---
+
+
 df = apply_stock_filters(result)
 entry_candidates = _entry_candidates(df, st.session_state.get("entry_preset", "Balanced"))
 
@@ -709,6 +778,22 @@ if momentum_ready:
     )
 else:
     momentum_candidates = df.iloc[0:0].copy()
+
+# --- MASTER LIST START (rollback-safe: reads existing screens only) ---
+master_sources = [
+    ("Top Picks", top, CONFLUENCE_WEIGHTS["Top Picks"]),
+    ("Momentum Leader", momentum_candidates, CONFLUENCE_WEIGHTS["Momentum Leader"]),
+    ("Trend Template", tt, CONFLUENCE_WEIGHTS["Trend Template"]),
+    ("VCP Setup", vcp, CONFLUENCE_WEIGHTS["VCP Setup"]),
+    ("VCP Breakout", _vcp_breakout_frame(df), CONFLUENCE_WEIGHTS["VCP Breakout"]),
+    ("Entry Candidates", entry_candidates, CONFLUENCE_WEIGHTS["Entry Candidates"]),
+    ("Volume Breakout", brk, CONFLUENCE_WEIGHTS["Volume Breakout"]),
+    ("Stage 1 Bases", s1, CONFLUENCE_WEIGHTS["Stage 1 Bases"]),
+    ("RS Blue Dot", blue, CONFLUENCE_WEIGHTS["RS Blue Dot"]),
+    ("Minervini Pro", _entry_candidates(df, "Minervini Pro"), CONFLUENCE_WEIGHTS["Minervini Pro"]),
+]
+master_list = _build_confluence_frame(df, master_sources)
+# --- MASTER LIST END ---
 
 # ---------------- KPI cards ----------------
 with slot_stats:
@@ -1460,6 +1545,9 @@ SCREEN_TABS = {
     "Volume Breakout": "breakouts",
     "Stage 1 Bases": "bases",
     "RS Blue Dot": "blue_dot",
+    # --- MASTER LIST START (rollback-safe) ---
+    "Master List": "master",
+    # --- MASTER LIST END ---
     "Breadth & Sectors": "market",
     "All Stocks": "all",
     "How to Use This Scanner": "guide",
@@ -1473,6 +1561,9 @@ SCREEN_DESCRIPTIONS = {
     "breakouts": "Recent price breakouts supported by elevated volume.",
     "bases": "Early sideways bases around a flat long-term moving average.",
     "blue_dot": "Stocks whose relative-strength line leads price to a 52-week high.",
+    # --- MASTER LIST START (rollback-safe) ---
+    "master": "One deduplicated list of every stock found by the other screens, with a weighted Confluence Score and A/B/C tier.",
+    # --- MASTER LIST END ---
     "market": "Market participation, group strength, and the new rotation map.",
     "chart": "Search a stock and inspect daily candles, volume, moving averages, auto-detected bases and optional drawing tools.",
     "all": "The full rated universe, with the current Filters applied.",
@@ -1729,6 +1820,20 @@ elif active_screen == "bases":
 elif active_screen == "blue_dot":
     show(blue, "blue_dot", f"RS line at a 52-week high while price is still more than 2% below its own high "
                            f"(RS ≥ {pref_rs}).")
+# --- MASTER LIST START (rollback-safe screen) ---
+elif active_screen == "master":
+    show(master_list, "master",
+         "<b>Master List</b> combines every stock found by Top Picks, Momentum Leader, Trend Template, VCP Setup, "
+         "VCP breakouts, Entry Candidates, Volume Breakout, Stage 1 Bases, RS Blue Dot and Minervini Pro. "
+         "Each symbol appears once; <b>In filters</b> keeps every source tag. "
+         "<b>Confluence Score</b> = quality (RS 25 + Trend Template 20 + sector 10 + Stage 2 5 + RS line 5) "
+         "+ weighted filter membership up to 35. "
+         "Tier: <b>A ≥ 85</b>, <b>B 70–84</b>, <b>C &lt; 70</b>. Sorted by score, then RS Rating.",
+         ui.COLS_MASTER, ("Confluence_Score", -1),
+         titles={"Confluence_Score": "Confluence", "In_Filters": "In filters",
+                 "Filter_Count": "# filters", "Tier": "Tier"},
+         scan_date=None)
+# --- MASTER LIST END ---
 elif active_screen == "market":
     show_breadth_and_sectors()
 elif active_screen == "all":
@@ -1880,6 +1985,10 @@ else:
         <b>Relaxed</b> or <b>Minervini Pro</b> to control selectivity; Balanced is the default.
         Minervini Pro adds the stricter X-post rules without changing the other presets.
         Confirm the chart and risk level before acting.</p></div>
+        <div class="guide-card"><h4>Master List</h4><p>One clean list built from every screen. Duplicate symbols are
+        removed; <b>In filters</b> shows where each stock came from. The <b>Confluence Score</b> rewards quality plus
+        multiple confirmations, with tiers <b>A ≥ 85</b>, <b>B 70–84</b> and <b>C &lt; 70</b>. Use it as a shortlist
+        map, not as an automatic buy signal.</p></div>
         <div class="guide-card"><h4>Stage 1 bases</h4><p>Stocks around a flat 150-day average with a sideways base.
         These are early watch-list candidates; the scanner does not call a base a confirmed uptrend.</p></div>""",
                     unsafe_allow_html=True)

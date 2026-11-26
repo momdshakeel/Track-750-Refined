@@ -419,6 +419,12 @@ SPEC = {
     "Entry_Score": dict(t="Entry score", type="bar", pri=1),
     "Entry_Type": dict(t="Entry type", type="text", pri=1, left=True),
     "Entry_Reason": dict(t="Why it scored", type="txt", pri=2, left=True),
+    # --- MASTER LIST START (rollback-safe) ---
+    "Confluence_Score": dict(t="Confluence", type="bar", pri=1),
+    "Tier": dict(t="Tier", type="tier", pri=1),
+    "Filter_Count": dict(t="# filters", type="n0", pri=1),
+    "In_Filters": dict(t="In filters", type="chips", pri=2, left=True),
+    # --- MASTER LIST END ---
     "Stop_Distance_%": dict(t="Stop distance", type="pct", pri=2),
     "Pivot": dict(t="Pivot", type="n2", pri=2),
     "Pct_To_Pivot": dict(t="To pivot", type="pct", pri=1),
@@ -468,6 +474,11 @@ COLS_ENTRY = ["Symbol", "Entry_Score", "Entry_Type", "RS_Rating", "TT_Score", "S
               "VCP_Breakout_Days_Ago", "VCP_Breakout_Vol_x", "Pct_Above_50SMA", "Extension_State",
               "Stop_Distance_%", "RS_Change", "RS_Excess_3M_%", "RS_Improving", "Volume_Pressure_20D",
               "VCP_Contractions", "Entry_Reason", "Stage", "Close", "Chg_1D_%", "Sector", "Company Name"]
+# --- MASTER LIST START (rollback-safe) ---
+COLS_MASTER = ["Symbol", "Confluence_Score", "Tier", "Filter_Count", "In_Filters",
+               "RS_Rating", "TT_Score", "Stage", "VCP_Contractions", "Pct_To_Pivot",
+               "Pct_From_52W_High", "Pct_Above_50SMA", "Close", "Sector", "Company Name"]
+# --- MASTER LIST END ---
 COLS_SECTOR_STRENGTH = ["Rank", "Group", "Sector_Score", "Stocks", "Median_RS", "Avg_RS", "Avg_RS_Change",
                         "Pct_RS80", "Pct_TT_Pass", "Pct_Above_200", "Pct_Stage2", "TT_Pass_Count", "Blue_Dots",
                         "Avg_Weighted_Return_%", "Top_Stocks"]
@@ -525,6 +536,17 @@ html.dark .c3{color:#fbbf24}
 html.dark .s3{color:#fbbf24}
 .s4{background:color-mix(in srgb,#ef4444 18%,var(--bg));color:var(--r)}
 .s0{background:var(--soft)}
+/* --- MASTER LIST START (rollback-safe) --- */
+.tierbadge{display:inline-grid;place-items:center;min-width:24px;padding:2px 8px;border-radius:7px;font-weight:800;font-size:.78rem}
+.ta{background:color-mix(in srgb,#10b981 20%,var(--bg));color:var(--g)}
+.tb{background:color-mix(in srgb,#f59e0b 22%,var(--bg));color:var(--a)}
+html.dark .tb{color:#fbbf24}
+.tc{background:var(--soft);color:color-mix(in srgb,var(--fg) 70%,var(--bg))}
+.chipsx{display:flex;flex-wrap:wrap;gap:4px;max-width:340px}
+.chipx2{display:inline-block;padding:2px 7px;border-radius:6px;font-size:.72rem;font-weight:600;white-space:nowrap;
+background:var(--soft);border:1px solid var(--line);color:color-mix(in srgb,var(--fg) 80%,var(--bg))}
+.chipx2.key{background:color-mix(in srgb,var(--accent) 10%,var(--bg));border-color:color-mix(in srgb,var(--accent) 35%,var(--line));color:var(--accent)}
+/* --- MASTER LIST END --- */
 .seg{display:inline-flex;gap:2px;vertical-align:middle;margin-right:7px}
 .seg i{width:5px;height:13px;border-radius:2px;background:var(--line)}
 .seg i.on{background:var(--accent)}
@@ -586,6 +608,10 @@ function cell(c,r){
     case 'ago':return k+(v==null?'<span class="faint">–</span>':v==0?'<span class="up">today</span>':v+'d ago')+'</td>';
     case 'mult':return k+(v==null?'<span class="faint">–</span>':Number(v).toFixed(1)+'×')+'</td>';
     case 'bar':return k+'<div class="bar"><div class="t"><div class="f" style="width:'+Math.max(0,Math.min(99,v||0))+'%"></div></div><b>'+(v==null?'–':v)+'</b></div></td>';
+    /* --- MASTER LIST START (rollback-safe) --- */
+    case 'tier':{const q=String(v||'').toUpperCase(),cl=q==='A'?'ta':q==='B'?'tb':'tc';return k+'<span class="tierbadge '+cl+'">'+esc(q||'–')+'</span></td>';}
+    case 'chips':{const parts=String(v||'').split(' · ').filter(Boolean);return k+'<span class="chipsx">'+parts.map((p,i)=>'<span class="chipx2'+(i===0?' key':'')+'">'+esc(p)+'</span>').join('')+'</span></td>';}
+    /* --- MASTER LIST END --- */
   }
   return k+esc(v)+'</td>';
 }
