@@ -54,8 +54,8 @@ git push -u origin main
 1. In the new repository go to **Settings → Actions → General → Workflow permissions**.
 2. Select **Read and write permissions** and save. (The job commits `data/` back to the repo.)
 3. Open the **Actions** tab → **Daily scan** → **Run workflow**.
-4. Wait a few minutes. A `data/` folder with `latest.csv`, `meta.json`, `shares.csv`, and
-   `data/history/` should appear after a successful run.
+4. Wait a few minutes. A `data/` folder with `latest.csv` (now including the `Darvas_*` columns),
+   `meta.json`, `shares.csv`, and `data/history/` should appear after a successful run.
 
 Your old repository's Actions and data are completely separate.
 

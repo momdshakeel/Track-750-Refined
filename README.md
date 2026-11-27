@@ -7,7 +7,7 @@ for relative strength, momentum, and classic trend / pattern setups. Educational
 
 - **RS Rating (1-99):** percentile rank of a weighted 3 / 6 / 9 / 12-month return (40 / 20 / 20 / 20%).
 - **Minervini Trend Template:** the 8 conditions, plus RS-line new highs, RS "blue dot" and RSI.
-- **Weinstein stages (1-4)**, sideways **bases**, **VCP setups** and **volume breakouts**.
+- **Weinstein stages (1-4)**, sideways **bases**, **VCP setups**, **Darvas boxes** and **volume breakouts**.
 - **Liquidity:** average daily traded value (close x volume) over 20 sessions; liquid = at least Rs 10 crore.
   The left sidebar can limit stock lists to liquid stocks.
 - **Market-cap filter:** shares outstanding x latest close, in Rs crore.
@@ -31,6 +31,9 @@ GitHub Actions (weekdays ~5 pm IST)  ->  build_data.py  ->  latest scan + 30-day
 
 The heavy work (downloading prices from Yahoo Finance and calculating everything) happens once a day in a free
 GitHub job. The app only reads the saved results, so visitors never wait and Yahoo is never called from the web server.
+Darvas boxes are computed in that same job from the OHLCV already downloaded for the other scans, and the resulting
+`Darvas_*` columns are saved directly in `data/latest.csv`. Older saved scans without those columns still use the
+one-click on-demand fallback in the app.
 If `data/latest.csv` does not exist yet, the app falls back to calculating live (3-5 minutes).
 For the VCP and Breakouts screens, the daily workflow also archives one full scan per market date under
 `data/history/` and removes snapshots older than 30 calendar days. Their date selector applies the existing

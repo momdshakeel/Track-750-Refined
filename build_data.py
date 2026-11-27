@@ -2,7 +2,8 @@
 Daily job: downloads prices, calculates everything and saves the results to data/.
 Run by GitHub Actions every weekday evening (see .github/workflows/daily_scan.yml),
 or by hand:   python build_data.py
-Creates: data/latest.csv (scan table), data/meta.json (timestamps), data/shares.csv (cache).
+Creates: data/latest.csv (scan table, including Darvas box columns), data/meta.json
+(timestamps), data/shares.csv (cache).
 If the data looks bad (Yahoo outage / throttling) the script exits with an error and the
 previous good data stays in place.
 """
@@ -67,6 +68,19 @@ def main():
     bench = m.get_benchmark()
     shares = get_shares(prices.columns.tolist())
     result, as_of = m.build_table(prices, bench, meta, ohlcv=md, shares=shares)
+    # --- DARVAS BOX START (rollback-safe: daily-job output) ---
+    # build_table() already computes Darvas boxes from the same in-memory OHLCV
+    # (Close/High/Low/Volume) used for VCP and bases. Confirm the columns are in
+    # the final table before save_results() writes latest.csv / history snapshots.
+    darvas_required = {"Darvas_OK", "Darvas_Box_Top", "Darvas_Box_Bottom"}
+    missing_darvas = darvas_required.difference(result.columns)
+    if missing_darvas:
+        print(f"WARNING: Darvas columns missing from scan output: {sorted(missing_darvas)}")
+    else:
+        darvas_matches = int(result["Darvas_OK"].fillna(False).astype(bool).sum())
+        darvas_fields = sum(1 for c in result.columns if str(c).startswith("Darvas_"))
+        print(f"Darvas boxes: {darvas_matches} matches; {darvas_fields} fields saved to latest.csv")
+    # --- DARVAS BOX END ---
     if len(result) < 0.5 * len(meta):
         sys.exit(f"ERROR: only {len(result)} stocks could be rated - keeping the previous results.")
 

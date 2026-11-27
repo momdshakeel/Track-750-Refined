@@ -2102,8 +2102,8 @@ elif active_screen == "master":
          "VCP breakouts, Entry Candidates, Volume Breakout, Stage 1 Bases, RS Blue Dot and Minervini Pro. "
          "Each symbol appears once; <b>In filters</b> keeps every source tag. "
          # --- DARVAS BOX START (rollback-safe: Master List note) ---
-         "<b>Darvas Box</b> is added as another tag once its on-demand scan has been run in this session; "
-         "it then counts in <b># filters</b> and the Confluence Score for that stock. "
+         "<b>Darvas Box</b> is added as another tag from the saved daily scan (or the one-click fallback for "
+         "older snapshots); it counts in <b># filters</b> and the Confluence Score for that stock. "
          # --- DARVAS BOX END ---
          "<b>Confluence Score</b> = quality (RS 25 + Trend Template 20 + sector 10 + Stage 2 5 + RS line 5) "
          "+ weighted filter membership up to 35. "
@@ -2154,7 +2154,7 @@ elif active_screen == "mf_inflow":
     show(merged, "mf_inflow",
          "<b>MF Inflow</b> maps the final Trendlyne mutual-fund inflow table against the current "
          "<b>Master List</b>. Every Master List column is preserved, including <b>In filters</b> and "
-         "<b># filters</b> (with <b>Darvas Box</b> counted once its scan has been run). The only added field is "
+         "<b># filters</b> (with <b>Darvas Box</b> counted from the saved daily scan). The only added field is "
          "<b>MF Month Chg %</b> from the Trendlyne CSV. Only positive one-month price changes are kept. "
          "Click a symbol to open its chart and review the entry setup.",
          ui.COLS_MF_INFLOW, ("MF_Month_Chg_%", -1),
@@ -2330,7 +2330,8 @@ else:
         <!-- --- DARVAS BOX START (rollback-safe guide) --- -->
         <div class="guide-card"><h4>Darvas boxes</h4><p>A high near the 52-week high that holds for three sessions
         becomes the box top; the lowest later low that holds becomes the stop. A close above the top ends the box.
-        The chart draws the boxes automatically and the <b>Darvas boxes</b> chip is independent of <b>Base markers</b>.</p></div>
+        Boxes are calculated in the daily scan and saved with the results; the chart draws them automatically and the
+        <b>Darvas boxes</b> chip is independent of <b>Base markers</b>.</p></div>
         <!-- --- DARVAS BOX END --- -->""",
                     unsafe_allow_html=True)
 
