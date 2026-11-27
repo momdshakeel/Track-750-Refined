@@ -31,6 +31,8 @@ jobs:
         run: pip install yfinance pandas numpy requests
 
       - name: Run the scan
+        # Darvas boxes are calculated here from the Yahoo OHLCV already downloaded
+        # by build_data.py and written into data/latest.csv with the other scan fields.
         run: python build_data.py
 
       - name: Archive scan history (30 days)
