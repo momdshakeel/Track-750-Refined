@@ -13,6 +13,8 @@ for relative strength, momentum, and classic trend / pattern setups. Educational
 - **Market-cap filter:** shares outstanding x latest close, in Rs crore.
 - **Breadth and sector strength** (liquid stocks only): advancers / decliners, 52-week highs and lows, share of
   stocks above the 50 / 150 / 200-day averages, Stage 2 and Trend Template shares, and a sector ranking.
+- **Weekly Shortlist** tab: Sunday 5 PM IST snapshots of the top 20 Master List names, with price gain since
+  selection and added / removed changes; 13 weekly lists are retained.
 - Sortable, responsive tables, font choice, light / dark mode, CSV downloads.
 - The classic left sidebar holds **Appearance**, stock filters, the custom screen builder, data status and refresh control.
 - **Momentum Candidates:** a staged screen requiring a supportive benchmark (above its 10- and 20-day averages),
@@ -25,6 +27,7 @@ for relative strength, momentum, and classic trend / pattern setups. Educational
 
 ```
 GitHub Actions (weekdays ~5 pm IST)  ->  build_data.py  ->  latest scan + 30-day setup history
+GitHub Actions (Sunday ~5 pm IST)    ->  weekly_shortlist.py ->  13 weekly top-20 snapshots
                                                                   |
                                       Streamlit app (app.py) reads data/  ->  opens in seconds
 ```
@@ -38,6 +41,9 @@ If `data/latest.csv` does not exist yet, the app falls back to calculating live 
 For the VCP and Breakouts screens, the daily workflow also archives one full scan per market date under
 `data/history/` and removes snapshots older than 30 calendar days. Their date selector applies the existing
 sidebar filters to the chosen snapshot; the dashboard header and summary cards continue to show the latest scan.
+Every Sunday at 5 pm IST, `weekly_shortlist.py` reads `latest.csv`, rebuilds the same 11-filter Master List and
+saves the top 20 names with their selection close to `data/weekly/weekly_shortlist.json`. The app compares each
+name with the latest scan to show gain since selection and with the previous Sunday to show added / removed names.
 
 ## Repository layout
 
@@ -46,12 +52,16 @@ app.py                         the Streamlit app
 ui.py                          look and feel (fonts, cards, tables)
 nse500_rs_rating.py            all calculations
 build_data.py                  the daily job
+master_engine.py               shared 11-filter Master List logic used by app + weekly job
+weekly_shortlist.py            the Sunday top-20 job
 archive_scan.py                save a dated snapshot and prune history to 30 days
 requirements.txt               Python packages for the app
-.github/workflows/daily_scan.yml   the schedule (GitHub Actions)
+.github/workflows/daily_scan.yml     the weekday schedule (GitHub Actions)
+.github/workflows/weekly_shortlist.yml   the Sunday schedule (GitHub Actions)
 .streamlit/config.toml         optional theme colour
 data/                          created by the daily job - do not edit by hand
 data/history/                  dated scan snapshots used by VCP / Breakouts history
+data/weekly/                   13 Sunday shortlist snapshots used by the Weekly Shortlist tab
 ```
 
 ## Setup (first time)
@@ -59,11 +69,14 @@ data/history/                  dated scan snapshots used by VCP / Breakouts hist
 1. Create a **public** GitHub repository and upload the files above.
 2. Repository **Settings -> Actions -> General -> Workflow permissions -> Read and write permissions -> Save**.
 3. **Actions** tab -> **Daily scan** -> **Run workflow**. After 5-20 minutes a `data/` folder appears.
-4. On share.streamlit.io choose **New app**, pick the repository, branch `main`, main file `app.py`, then **Deploy**.
+4. **Actions** tab -> **Weekly shortlist** -> **Run workflow** once to create the first Sunday snapshot.
+5. On share.streamlit.io choose **New app**, pick the repository, branch `main`, main file `app.py`, then **Deploy**.
 
 ## Running it
 
-- The job runs every weekday at 11:30 UTC (5:00 pm IST). Start it by hand any time from the Actions tab.
+- The daily job runs every weekday at 11:30 UTC (5:00 pm IST); the weekly job runs every Sunday at the same time.
+  Both can be started by hand from the Actions tab.
+- The weekly job uses the existing saved scan, so it needs no Yahoo download and finishes quickly.
 - If a run fails, the previous good data stays in place and GitHub emails you.
 - The app shows a warning when the data is more than 4 days old.
 - GitHub can pause scheduled jobs in a repository with no activity for 60 days; click **Enable** in the Actions tab.

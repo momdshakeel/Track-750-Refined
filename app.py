@@ -150,6 +150,26 @@ def load_scan_history(scan_date, refresh_token="initial"):
     return frame
 
 
+# --- WEEKLY SHORTLIST START (rollback-safe loader) ---
+@st.cache_data(ttl=300, max_entries=30, show_spinner=False)
+def load_weekly_shortlist(refresh_token="initial"):
+    """Read the Sunday shortlist history from local data/ or the configured data URL."""
+    if DATA_URL:
+        response = requests.get(
+            f"{DATA_URL}/weekly/weekly_shortlist.json", params={"_": refresh_token}, timeout=20
+        )
+        if response.status_code == 404:
+            return {"snapshots": []}
+        response.raise_for_status()
+        return response.json()
+    path = os.path.join(DATA_DIR, "weekly", "weekly_shortlist.json")
+    if not os.path.exists(path):
+        return {"snapshots": []}
+    with open(path, encoding="utf-8") as handle:
+        return json.load(handle)
+# --- WEEKLY SHORTLIST END ---
+
+
 @st.cache_data(ttl=24 * 3600, show_spinner=False)
 def fetch_universe():
     """Live fallback: Nifty Total Market list from NSE -> local copy -> Nifty 500 + Microcap 250."""
@@ -829,6 +849,16 @@ def _build_confluence_frame(base, sources):
     return out.sort_values(["Confluence_Score", "RS_Rating", "Filter_Count"],
                            ascending=[False, False, False])
 # --- MASTER LIST END ---
+
+# --- WEEKLY SHORTLIST START (rollback-safe: shared engine) ---
+# Import after the rolled-in helpers above so the app and the Sunday job use one
+# identical Master List definition (11 tags, weights and A/B/C tiers).
+from master_engine import (  # noqa: E402
+    ENTRY_PRESETS, CONFLUENCE_WEIGHTS, MASTER_SOURCE_LABELS,
+    _series_flag, _vcp_contraction_stats, _vcp_breakout_frame,
+    _entry_candidates, _build_confluence_frame,
+)
+# --- WEEKLY SHORTLIST END ---
 
 
 df = apply_stock_filters(result)
@@ -1752,6 +1782,9 @@ SCREEN_TABS = {
     # --- MF INFLOW PANEL START (rollback-safe) ---
     "MF Inflow": "mf_inflow",
     # --- MF INFLOW PANEL END ---
+    # --- WEEKLY SHORTLIST START (rollback-safe screen) ---
+    "Weekly Shortlist": "weekly",
+    # --- WEEKLY SHORTLIST END ---
     "Breadth & Sectors": "market",
     "All Stocks": "all",
     "How to Use This Scanner": "guide",
@@ -1774,6 +1807,9 @@ SCREEN_DESCRIPTIONS = {
     # --- MF INFLOW PANEL START (rollback-safe) ---
     "mf_inflow": "Master List stocks matched against positive mutual-fund holding and one-month price changes, with one extra MF Month Chg % column.",
     # --- MF INFLOW PANEL END ---
+    # --- WEEKLY SHORTLIST START (rollback-safe screen) ---
+    "weekly": "Sunday 5 PM snapshot of the top 20 names from all 11 scanner filters, with price gain since selection and added / removed changes.",
+    # --- WEEKLY SHORTLIST END ---
     "market": "Market participation, group strength, and the new rotation map.",
     "chart": "Search a stock and inspect daily candles, volume, moving averages, auto-detected bases and optional drawing tools.",
     "all": "The full rated universe, with the current Filters applied.",
@@ -2162,6 +2198,135 @@ elif active_screen == "mf_inflow":
                  "In_Filters": "In filters", "Filter_Count": "# filters", "Tier": "Tier"},
          scan_date=None)
 # --- MF INFLOW PANEL END ---
+# --- WEEKLY SHORTLIST START (rollback-safe screen) ---
+elif active_screen == "weekly":
+    refresh_token = st.session_state.get("data_refresh_token", "initial")
+    try:
+        weekly_data = load_weekly_shortlist(refresh_token)
+    except Exception as error:
+        st.warning(f"Could not load the Weekly Shortlist ({error}). Run the Sunday workflow once to create it.")
+        weekly_data = {"snapshots": []}
+    snapshots = [s for s in weekly_data.get("snapshots", []) if str(s.get("date", ""))[:10]]
+    if not snapshots:
+        st.info("No Weekly Shortlist yet. The Sunday 5 PM IST job creates the first snapshot after a successful "
+                "Daily scan. You can also run **Actions → Weekly shortlist → Run workflow** now.")
+    else:
+        week_dates = [str(s["date"])[:10] for s in snapshots]
+        selected_week = st.selectbox(
+            "Weekly list", week_dates, index=0,
+            format_func=lambda value: datetime.fromisoformat(value).strftime("%a, %d %b %Y"),
+            key="weekly_shortlist_date",
+        )
+        week_index = week_dates.index(selected_week)
+        snap = snapshots[week_index]
+        previous = snapshots[week_index + 1] if week_index + 1 < len(snapshots) else None
+        previous_rows = previous.get("rows", []) if previous else []
+        previous_symbols = {str(r.get("Symbol", "")) for r in previous_rows}
+
+        current_close = {}
+        if {"Symbol", "Close"}.issubset(result.columns):
+            for _, row in result.iterrows():
+                current_close[str(row["Symbol"])] = pd.to_numeric(row["Close"], errors="coerce")
+
+        def _gain(row):
+            selected = pd.to_numeric(row.get("Close_At_Selection", row.get("Close")), errors="coerce")
+            now = current_close.get(str(row.get("Symbol", "")))
+            if pd.isna(selected) or pd.isna(now) or float(selected) <= 0:
+                return None
+            return round((float(now) / float(selected) - 1) * 100, 2)
+
+        def _weeks_held(symbol):
+            held = 1
+            for older in snapshots[week_index + 1:]:
+                if symbol in {str(r.get("Symbol", "")) for r in older.get("rows", [])}:
+                    held += 1
+                else:
+                    break
+            return held
+
+        def _weekly_frame(rows, removed=False):
+            records = []
+            for row in rows:
+                symbol = str(row.get("Symbol", ""))
+                if removed:
+                    change = "Removed"
+                elif previous is None:
+                    change = "Added"
+                elif symbol in previous_symbols:
+                    change = "Held"
+                else:
+                    change = "Added"
+                records.append({
+                    "Symbol": symbol,
+                    "Company Name": row.get("Company Name", ""),
+                    "Sector": row.get("Sector", ""),
+                    "Confluence_Score": row.get("Confluence_Score"),
+                    "Tier": row.get("Tier", ""),
+                    "Filter_Count": row.get("Filter_Count"),
+                    "In_Filters": row.get("In_Filters", ""),
+                    "RS_Rating": row.get("RS_Rating"),
+                    "RS_Excess_3M_%": row.get("RS_Excess_3M_%"),
+                    "Vol_x_50d": row.get("Vol_x_50d"),
+                    "TT_Score": row.get("TT_Score"),
+                    "Stage": row.get("Stage", ""),
+                    "Close": current_close.get(symbol, row.get("Close")),
+                    "Selected_Close": row.get("Close_At_Selection", row.get("Close")),
+                    "Gain_Since_Selection_%": _gain(row),
+                    "Selection_Date": str(row.get("Selection_Date", snap.get("date", "")))[:10],
+                    "Weeks_Held": _weeks_held(symbol),
+                    "Change": change,
+                })
+            return pd.DataFrame(records)
+
+        weekly_frame = _weekly_frame(snap.get("rows", []))
+        removed_symbols = [s for s in previous_symbols
+                           if s not in set(weekly_frame["Symbol"].astype(str))] if previous else []
+        removed_by_symbol = {str(r.get("Symbol", "")): r for r in previous_rows}
+        removed_frame = _weekly_frame([removed_by_symbol[s] for s in removed_symbols], removed=True)
+
+        weekly_gains = pd.to_numeric(weekly_frame["Gain_Since_Selection_%"], errors="coerce").dropna() \
+            if not weekly_frame.empty else pd.Series(dtype=float)
+        added_count = int((weekly_frame["Change"] == "Added").sum()) if not weekly_frame.empty else 0
+        ui.kpis([
+            ("Weekly lists", len(snapshots), "≈ 3 months retained", ""),
+            ("Names this week", len(weekly_frame), selected_week, ""),
+            ("Added this week", added_count, "vs previous Sunday", ""),
+            ("Average gain", f"{weekly_gains.mean():+.1f}%" if not weekly_gains.empty else "–",
+             "vs latest scan", ""),
+        ])
+        st.caption(f"Selected from the {snap.get('scan_date', as_of.date())} scan · "
+                   f"generated {str(snap.get('generated_at', ''))[:19].replace('T', ' ')} IST · "
+                   f"stored in data/weekly (13 Sunday snapshots max).")
+
+        show(weekly_frame, "weekly_shortlist",
+             "<b>Weekly Shortlist</b> is created every Sunday at 5 PM IST from the saved daily scan. "
+             "It ranks the same <b>Master List</b> built from all 11 scanner filters by Confluence Score, "
+             "RS Rating and # filters, then stores the top 20 with their selection close. "
+             "<b>Gain since selection</b> compares that close with the latest scan. "
+             "<b>Added / Removed</b> compares this Sunday with the previous Sunday. "
+             "Thirteen snapshots (about three months) are kept.",
+             ui.COLS_WEEKLY, ("Confluence_Score", -1),
+             titles={"Confluence_Score": "Confluence", "In_Filters": "In filters",
+                     "Filter_Count": "# filters", "Tier": "Tier",
+                     "Change": "Added / Removed", "Gain_Since_Selection_%": "Gain since selection",
+                     "Selected_Close": "Close at selection"},
+             scan_date=None)
+
+        if not removed_frame.empty:
+            st.markdown("#### Removed from this week's list")
+            st.caption("These names were on the previous Sunday list but not on the selected list.")
+            ui.table(removed_frame, [c for c in ui.COLS_WEEKLY if c in removed_frame.columns],
+                     ("Change", 1), font, density,
+                     titles={"Confluence_Score": "Confluence", "In_Filters": "In filters",
+                             "Filter_Count": "# filters", "Tier": "Tier",
+                             "Change": "Added / Removed", "Gain_Since_Selection_%": "Gain since selection",
+                             "Selected_Close": "Close at selection"},
+                     search_keys=["Symbol", "Company Name"])
+            st.download_button("⬇️ Download removed CSV",
+                               removed_frame.to_csv(index=False).encode("utf-8"),
+                               file_name=f"totalmarket_weekly_removed_{selected_week}.csv",
+                               mime="text/csv", key="dl_weekly_removed")
+# --- WEEKLY SHORTLIST END ---
 elif active_screen == "market":
     show_breadth_and_sectors()
 elif active_screen == "all":
@@ -2317,6 +2482,9 @@ else:
         removed; <b>In filters</b> shows where each stock came from, including <b>Darvas Box</b> after its scan.
         The <b>Confluence Score</b> rewards quality plus multiple confirmations, with tiers <b>A ≥ 85</b>,
         <b>B 70–84</b> and <b>C &lt; 70</b>. Use it as a shortlist map, not as an automatic buy signal.</p></div>
+        <div class="guide-card"><h4>Weekly Shortlist</h4><p>Every Sunday at 5 PM IST the job saves the top 20 names from
+        the 11-filter Master List, their price at selection and the added / removed changes versus the previous Sunday.
+        Gain since selection is recalculated from the latest saved scan. Thirteen weekly lists are retained.</p></div>
         <div class="guide-card"><h4>Stage 1 bases</h4><p>Stocks around a flat 150-day average with a sideways base.
         These are early watch-list candidates; the scanner does not call a base a confirmed uptrend.</p></div>""",
                     unsafe_allow_html=True)

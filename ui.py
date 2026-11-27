@@ -469,6 +469,13 @@ SPEC = {
     # --- MF INFLOW PANEL START (rollback-safe) ---
     "MF_Month_Chg_%": dict(t="MF month chg %", type="spct", pri=1),
     # --- MF INFLOW PANEL END ---
+    # --- WEEKLY SHORTLIST START (rollback-safe) ---
+    "Selection_Date": dict(t="Selected", type="text", pri=1, left=True),
+    "Selected_Close": dict(t="Close at selection", type="n2", pri=2),
+    "Gain_Since_Selection_%": dict(t="Gain since selection", type="spct", pri=1),
+    "Change": dict(t="Added / Removed", type="text", pri=1, left=True),
+    "Weeks_Held": dict(t="Weeks held", type="n0", pri=2),
+    # --- WEEKLY SHORTLIST END ---
     "Stop_Distance_%": dict(t="Stop distance", type="pct", pri=2),
     "Pivot": dict(t="Pivot", type="n2", pri=2),
     "Pct_To_Pivot": dict(t="To pivot", type="pct", pri=1),
@@ -535,6 +542,11 @@ COLS_MF_INFLOW = ["Symbol", "Confluence_Score", "Tier", "MF_Month_Chg_%", "Filte
                   "Pct_To_Pivot", "Pct_From_52W_High", "Pct_Above_50SMA", "Close",
                   "Sector", "Company Name"]
 # --- MF INFLOW PANEL END ---
+# --- WEEKLY SHORTLIST START (rollback-safe) ---
+COLS_WEEKLY = ["Symbol", "Confluence_Score", "Tier", "Filter_Count", "In_Filters",
+               "Change", "Selection_Date", "Weeks_Held", "Selected_Close", "Close",
+               "Gain_Since_Selection_%", "RS_Rating", "TT_Score", "Stage", "Sector", "Company Name"]
+# --- WEEKLY SHORTLIST END ---
 COLS_SECTOR_STRENGTH = ["Rank", "Group", "Sector_Score", "Stocks", "Median_RS", "Avg_RS", "Avg_RS_Change",
                         "Pct_RS80", "Pct_TT_Pass", "Pct_Above_200", "Pct_Stage2", "TT_Pass_Count", "Blue_Dots",
                         "Avg_Weighted_Return_%", "Top_Stocks"]
