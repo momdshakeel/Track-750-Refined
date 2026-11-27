@@ -771,6 +771,9 @@ CONFLUENCE_WEIGHTS = {
     "Stage 1 Bases": 5,
     "RS Blue Dot": 8,
     "Minervini Pro": 13,
+    # --- DARVAS BOX START (rollback-safe: Master List tag) ---
+    "Darvas Box": 10,
+    # --- DARVAS BOX END ---
 }
 
 
@@ -867,12 +870,25 @@ else:
     momentum_candidates = df.iloc[0:0].copy()
 
 # --- MASTER LIST START (rollback-safe: reads existing screens only) ---
+# --- DARVAS BOX START (rollback-safe: Master List tag) ---
+darvas_master = df.iloc[0:0].copy()
+if {"Darvas_OK", "Darvas_Box_Top", "Darvas_Box_Bottom"}.issubset(df.columns):
+    darvas_master = df[_series_flag(df["Darvas_OK"], df.index)].copy()
+elif st.session_state.get("darvas_scan_key") == str(as_of.date()):
+    try:
+        darvas_master = darvas_screen_frame(df)
+    except Exception as error:
+        st.session_state["darvas_master_error"] = str(error)
+# --- DARVAS BOX END ---
 master_sources = [
     ("Top Picks", top, CONFLUENCE_WEIGHTS["Top Picks"]),
     ("Momentum Leader", momentum_candidates, CONFLUENCE_WEIGHTS["Momentum Leader"]),
     ("Trend Template", tt, CONFLUENCE_WEIGHTS["Trend Template"]),
     ("VCP Setup", vcp, CONFLUENCE_WEIGHTS["VCP Setup"]),
     ("VCP Breakout", _vcp_breakout_frame(df), CONFLUENCE_WEIGHTS["VCP Breakout"]),
+    # --- DARVAS BOX START (rollback-safe: Master List tag) ---
+    ("Darvas Box", darvas_master, CONFLUENCE_WEIGHTS["Darvas Box"]),
+    # --- DARVAS BOX END ---
     ("Entry Candidates", entry_candidates, CONFLUENCE_WEIGHTS["Entry Candidates"]),
     ("Volume Breakout", brk, CONFLUENCE_WEIGHTS["Volume Breakout"]),
     ("Stage 1 Bases", s1, CONFLUENCE_WEIGHTS["Stage 1 Bases"]),
@@ -2000,7 +2016,8 @@ elif active_screen == "darvas":
         if run_darvas:
             st.session_state["darvas_scan_key"] = scan_key
         st.caption("The saved scan predates Darvas columns. Run the on-demand scan once to calculate boxes from "
-                   "daily OHLCV in this session; no data file or GitHub update is written.")
+                   "daily OHLCV in this session; no data file or GitHub update is written. Matching stocks also gain "
+                   "a Darvas Box tag in Master List and MF Inflow.")
     if saved_has_darvas or st.session_state.get("darvas_scan_key") == scan_key:
         with st.spinner("Reading Darvas boxes…"):
             darvas_view = darvas_screen_frame(df)
@@ -2084,6 +2101,10 @@ elif active_screen == "master":
          "<b>Master List</b> combines every stock found by Top Picks, Momentum Leader, Trend Template, VCP Setup, "
          "VCP breakouts, Entry Candidates, Volume Breakout, Stage 1 Bases, RS Blue Dot and Minervini Pro. "
          "Each symbol appears once; <b>In filters</b> keeps every source tag. "
+         # --- DARVAS BOX START (rollback-safe: Master List note) ---
+         "<b>Darvas Box</b> is added as another tag once its on-demand scan has been run in this session; "
+         "it then counts in <b># filters</b> and the Confluence Score for that stock. "
+         # --- DARVAS BOX END ---
          "<b>Confluence Score</b> = quality (RS 25 + Trend Template 20 + sector 10 + Stage 2 5 + RS line 5) "
          "+ weighted filter membership up to 35. "
          "Tier: <b>A ≥ 85</b>, <b>B 70–84</b>, <b>C &lt; 70</b>. Sorted by score, then RS Rating.",
@@ -2132,7 +2153,8 @@ elif active_screen == "mf_inflow":
     merged = mf.merge_master_with_month_change(master_list, inflow)
     show(merged, "mf_inflow",
          "<b>MF Inflow</b> maps the final Trendlyne mutual-fund inflow table against the current "
-         "<b>Master List</b>. Every Master List column is preserved; the only added field is "
+         "<b>Master List</b>. Every Master List column is preserved, including <b>In filters</b> and "
+         "<b># filters</b> (with <b>Darvas Box</b> counted once its scan has been run). The only added field is "
          "<b>MF Month Chg %</b> from the Trendlyne CSV. Only positive one-month price changes are kept. "
          "Click a symbol to open its chart and review the entry setup.",
          ui.COLS_MF_INFLOW, ("MF_Month_Chg_%", -1),
@@ -2292,9 +2314,9 @@ else:
         Minervini Pro adds the stricter X-post rules without changing the other presets.
         Confirm the chart and risk level before acting.</p></div>
         <div class="guide-card"><h4>Master List</h4><p>One clean list built from every screen. Duplicate symbols are
-        removed; <b>In filters</b> shows where each stock came from. The <b>Confluence Score</b> rewards quality plus
-        multiple confirmations, with tiers <b>A ≥ 85</b>, <b>B 70–84</b> and <b>C &lt; 70</b>. Use it as a shortlist
-        map, not as an automatic buy signal.</p></div>
+        removed; <b>In filters</b> shows where each stock came from, including <b>Darvas Box</b> after its scan.
+        The <b>Confluence Score</b> rewards quality plus multiple confirmations, with tiers <b>A ≥ 85</b>,
+        <b>B 70–84</b> and <b>C &lt; 70</b>. Use it as a shortlist map, not as an automatic buy signal.</p></div>
         <div class="guide-card"><h4>Stage 1 bases</h4><p>Stocks around a flat 150-day average with a sideways base.
         These are early watch-list candidates; the scanner does not call a base a confirmed uptrend.</p></div>""",
                     unsafe_allow_html=True)
