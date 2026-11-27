@@ -506,6 +506,90 @@ def _vcp_contraction_stats(series):
 # --- MINERVINI PRO END ---
 
 
+# --- DARVAS BOX START (rollback-safe helpers) ---
+@st.cache_data(ttl=CACHE_HOURS * 3600, show_spinner=False, max_entries=8)
+def compute_darvas_scan(symbols: tuple, tickers: tuple, as_of: str) -> pd.DataFrame:
+    """Fetch daily OHLCV for a bounded candidate set and compute Darvas boxes in memory.
+
+    Nothing is written to data/, GitHub or any cache file: yfinance results stay in
+    Streamlit's in-process cache for this app only.
+    """
+    if not symbols or not tickers:
+        return pd.DataFrame()
+    md = m.download_market_data(list(tickers))
+    close, high = md["Close"], md["High"]
+    low, volume = md["Low"], md["Volume"]
+    rows = []
+    for symbol, ticker in zip(symbols, tickers):
+        if ticker not in close.columns:
+            continue
+        aligned = pd.DataFrame({
+            "Close": close[ticker],
+            "High": high.reindex(index=close.index)[ticker],
+            "Low": low.reindex(index=close.index)[ticker],
+            "Volume": volume.reindex(index=close.index)[ticker].fillna(0),
+        }).dropna(subset=["Close", "High", "Low"])
+        if len(aligned) < m.DARVAS_CONFIRM_DAYS * 2 + 10:
+            continue
+        row = m.darvas_columns(
+            aligned[["Close"]].rename(columns={"Close": symbol}),
+            aligned[["High"]].rename(columns={"High": symbol}),
+            aligned[["Low"]].rename(columns={"Low": symbol}),
+            aligned[["Volume"]].rename(columns={"Volume": symbol}),
+            [symbol],
+        ).iloc[0].to_dict()
+        row["Symbol"] = symbol
+        row["Darvas_Last_Close"] = float(aligned["Close"].iloc[-1])
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def darvas_screen_frame(frame):
+    """Darvas rows from saved scan columns, or from an explicit on-demand fetch."""
+    idx = frame.index
+    if {"Darvas_OK", "Darvas_Box_Top", "Darvas_Box_Bottom"}.issubset(frame.columns):
+        out = frame[_series_flag(frame["Darvas_OK"], idx)].copy()
+    else:
+        scan_key = str(as_of.date())
+        if st.session_state.get("darvas_scan_key") != scan_key:
+            return None
+        rs = pd.to_numeric(frame.get("RS_Rating", pd.Series(np.nan, index=idx)), errors="coerce")
+        near = pd.to_numeric(frame.get("Pct_From_52W_High", pd.Series(np.nan, index=idx)), errors="coerce")
+        candidates = frame[(rs >= getattr(m, "DARVAS_MIN_RS", 60))
+                           & (near >= -getattr(m, "DARVAS_SCAN_NEAR_PCT", 10))]
+        sort_cols = [c for c in ("RS_Rating", "Avg_Value_Cr") if c in candidates.columns]
+        if sort_cols:
+            candidates = candidates.sort_values(sort_cols, ascending=False, na_position="last")
+        candidates = candidates.head(getattr(m, "DARVAS_MAX_CANDIDATES", 140))
+        if candidates.empty:
+            return frame.iloc[0:0].copy()
+        universe = fetch_universe()
+        if universe is None:
+            st.warning("Could not load the NSE ticker list for the on-demand Darvas scan.")
+            return frame.iloc[0:0].copy()
+        ticker_by_symbol = dict(zip(universe["Symbol"].astype(str), universe["Ticker"].astype(str)))
+        pairs = [(str(s), ticker_by_symbol.get(str(s), ""))
+                 for s in candidates["Symbol"].astype(str)]
+        pairs = [(s, t) for s, t in pairs if t]
+        if not pairs:
+            return frame.iloc[0:0].copy()
+        computed = compute_darvas_scan(tuple(s for s, _ in pairs), tuple(t for _, t in pairs), scan_key)
+        if computed.empty:
+            return frame.iloc[0:0].copy()
+        merged = candidates.merge(computed, on="Symbol", how="inner")
+        out = merged[_series_flag(merged["Darvas_OK"], merged.index)].copy()
+    if out.empty:
+        return out
+    days = pd.to_numeric(out.get("Darvas_Breakout_Days_Ago",
+                                pd.Series(np.nan, index=out.index)), errors="coerce").fillna(9999)
+    rs_sort = pd.to_numeric(out.get("RS_Rating", pd.Series(np.nan, index=out.index)),
+                            errors="coerce").fillna(-1)
+    out = out.assign(_darvas_sort=days, _rs_sort=rs_sort)
+    return (out.sort_values(["_darvas_sort", "_rs_sort"], ascending=[True, False])
+               .drop(columns=["_darvas_sort", "_rs_sort"]))
+# --- DARVAS BOX END ---
+
+
 ENTRY_PRESETS = {
     "Strict":   dict(rs=80, tt=7, sec=60, ext=12, brk=3, pivot=5),
     "Balanced": dict(rs=80, tt=6, sec=55, ext=15, brk=5, pivot=5),
@@ -1267,12 +1351,43 @@ def chart_base_history(history: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows[::-1])
 
 
+# --- DARVAS BOX START (rollback-safe chart helper) ---
+def chart_darvas_history(history: pd.DataFrame) -> pd.DataFrame:
+    """Build the chart-only Darvas box records from the same daily history as the base markers."""
+    frame = history.dropna(subset=["High", "Low", "Close"]).copy()
+    if frame.empty:
+        return pd.DataFrame()
+    volume = frame["Volume"].fillna(0) if "Volume" in frame.columns else pd.Series(0.0, index=frame.index)
+    boxes = m.find_darvas_boxes(frame["High"].to_numpy(), frame["Low"].to_numpy(),
+                                frame["Close"].to_numpy(), volume.to_numpy(), index=frame.index)
+    rows = []
+    for number, box in enumerate(boxes[-6:], 1):
+        vol_text = f"{box['breakout_vol']:.2f}×" if box["breakout_vol"] is not None else "—"
+        rows.append({
+            "Box": f"D{number}", "Top": _fmt_price(box["top"]), "Stop": _fmt_price(box["bottom"]),
+            "Height": f"{box['height_pct']:.1f}%", "Status": box["status"], "Volume": vol_text,
+            "Then": box["status"],
+            "_n": number, "_top_date": box["top_date"], "_bottom_date": box["bottom_date"],
+            "_bottom_confirm_date": box["bottom_confirm_date"],
+            "_breakout_date": box["breakout_date"], "_end_date": box["end_date"],
+            "_top": float(box["top"]), "_bottom": float(box["bottom"]),
+            "_height": float(box["height_pct"]), "_vol": box["breakout_vol"],
+            "_breakout": bool(box["breakout_i"] is not None), "_status": box["status"],
+            "_reason": box["reason"],
+        })
+    return pd.DataFrame(rows[::-1])
+# --- DARVAS BOX END ---
+
+
 def fetch_chart_payload(symbol: str, period: str) -> dict:
     """Fetch and calculate chart-only data in memory; no disk or repository writes."""
     history = load_chart_history(symbol, period)
     relative = history["Close"] / history["Benchmark_Close"].replace(0, np.nan)
     relative = relative / relative.dropna().iloc[0] * 100 if relative.notna().any() else relative
     base_history = chart_base_history(history)
+    # --- DARVAS BOX START (rollback-safe chart payload) ---
+    darvas_history = chart_darvas_history(history)
+    # --- DARVAS BOX END ---
     return {
         "symbol": symbol, "period": period,
         "benchmark": history.attrs.get("benchmark", "Unavailable"),
@@ -1285,6 +1400,9 @@ def fetch_chart_payload(symbol: str, period: str) -> dict:
         } for day, row in history.iterrows()],
         "dates": [day.strftime("%Y-%m-%d") for day in history.index],
         "base_history": base_history.to_dict("records"),
+        # --- DARVAS BOX START (rollback-safe chart payload) ---
+        "darvas_history": darvas_history.to_dict("records"),
+        # --- DARVAS BOX END ---
     }
 
 
@@ -1420,6 +1538,56 @@ def _base_table_html(records, vcp_pivot=None, vcp_contractions="") -> str:
             'for the exact numbers. Bases follow the chart\'s Bases indicator. History, not a forecast.</p></div>')
 
 
+# --- DARVAS BOX START (rollback-safe details card) ---
+def _darvas_table_html(records) -> str:
+    """Darvas-only details card. Separate from Base history, with its own (i) explanations."""
+    rows = []
+    for record in records or []:
+        box = str(record.get("Box", "") or "")
+        if not box:
+            continue
+        reason = str(record.get("_reason", "") or "")
+        facts = [
+            f"Top {record.get('Top', '—')} on {record.get('_top_date', '—')}. No session exceeded it for "
+            f"{getattr(m, 'DARVAS_CONFIRM_DAYS', 3)} sessions.",
+            f"Bottom / stop {record.get('Stop', '—')} on {record.get('_bottom_date', '—')}, the lowest low "
+            f"that then held for {getattr(m, 'DARVAS_CONFIRM_DAYS', 3)} sessions.",
+            f"Box height {record.get('Height', '—')}; boxes above "
+            f"{getattr(m, 'DARVAS_MAX_BOX_HEIGHT_PCT', 20):.0f}% are skipped.",
+            f"Breakout: {record.get('_breakout_date') or 'not yet'} on "
+            f"{record.get('Volume', '—')} breakout volume.",
+            f"Stop / cancel level: close below {record.get('Stop', '—')} cancels the box.",
+        ]
+        if reason:
+            facts.append(reason)
+        lines = "".join(f'<span class="ln">{_esc(fact)}</span>' for fact in facts)
+        status = _esc(str(record.get("Status", "") or ""))
+        info = f'<span class="i" tabindex="0">i<span class="tip wide"><b>Why {box}?</b>{lines}</span></span>'
+        rows.append(
+            f'<tr><td data-l="Box">{_esc(box)}</td><td data-l="Top date">{_esc(str(record.get("_top_date", "")))}</td>'
+            f'<td data-l="Top">{_esc(str(record.get("Top", "")))}</td>'
+            f'<td data-l="Stop date">{_esc(str(record.get("_bottom_date", "")))}</td>'
+            f'<td data-l="Stop">{_esc(str(record.get("Stop", "")))}</td>'
+            f'<td data-l="Height">{_esc(str(record.get("Height", "")))}</td>'
+            f'<td data-l="Breakout vol">{_esc(str(record.get("Volume", "")))}</td>'
+            f'<td data-l="Status">{status} {info}</td></tr>')
+    if not rows:
+        return ""
+    head = ('<thead><tr><th>Box' + '<span class="i" tabindex="0">i<span class="tip">D-numbers match the purple '
+            'Darvas boxes on the chart, newest first.</span></span>' + '</th>'
+            '<th>Top date</th><th>Box top</th><th>Stop date</th><th>Box bottom / stop</th><th>Height</th>'
+            '<th>Breakout volume</th>'
+            '<th>Status' + '<span class="i" tabindex="0">i<span class="tip">Click the i on a row for the top date, '
+            'bottom date, confirmation sessions, breakout date, volume multiple and stop/cancel level.</span></span>'
+            '</th></tr></thead>')
+    return (_BASE_TABLE_CSS + '<div class="mp-bt"><h4>Darvas boxes<small>automatic · newest first</small></h4>'
+            f'<table>{head}<tbody>{"".join(rows)}</tbody></table>'
+            '<p class="note"><b>Box top</b> = a high within 5% of the trailing 52-week high that was not exceeded '
+            'for 3 sessions. <b>Box bottom / stop</b> = the lowest later low that held for 3 sessions. A close '
+            'above the top ends the box; a close below the bottom cancels it. The <b>Darvas boxes</b> chip on the '
+            'chart toggles only this overlay; <b>Base markers</b> stays independent.</p></div>')
+# --- DARVAS BOX END ---
+
 
 def _num(row, key, default=None):
     """Read a numeric field from a scan row, returning `default` for missing / NaN values."""
@@ -1510,6 +1678,13 @@ def _show_symbol_chart_dialog(symbol: str) -> None:
         st.markdown(table_html, unsafe_allow_html=True)
     else:
         st.info("No completed or forming bases matching the rolling history rule were found.")
+    # --- DARVAS BOX START (rollback-safe details) ---
+    darvas_table = _darvas_table_html(payload.get("darvas_history", []))
+    if darvas_table:
+        st.markdown(darvas_table, unsafe_allow_html=True)
+    else:
+        st.info("No confirmed Darvas boxes in the recent daily history.")
+    # --- DARVAS BOX END ---
 
     # Charts are fully automatic: only the scanner's detected bases are drawn.
     with chart_slot:
@@ -1517,7 +1692,11 @@ def _show_symbol_chart_dialog(symbol: str) -> None:
         fp.render_launcher(symbol, context="chart_dialog")
         # --- FUNDAMENTALS PANEL END ---
         ui.chart_explorer(bars, symbol, "", "", 0.0,
-                          payload["base_history"], visible_window="1Y", info=info, footer=footer)
+                          payload["base_history"], visible_window="1Y", info=info, footer=footer,
+                          # --- DARVAS BOX START (rollback-safe chart overlay) ---
+                          darvas_history=payload.get("darvas_history", [])
+                          # --- DARVAS BOX END ---
+                          )
     # --- FUNDAMENTALS PANEL START (rollback-safe) ---
     fp.render_if_requested(symbol, company_name)
     # --- FUNDAMENTALS PANEL END ---
@@ -1544,6 +1723,9 @@ SCREEN_TABS = {
     "Momentum Leader": "momentum",
     "Trend Template": "trend",
     "VCP Setup": "vcp",
+    # --- DARVAS BOX START (rollback-safe screen) ---
+    "Darvas Box": "darvas",
+    # --- DARVAS BOX END ---
     "Entry Candidates": "entry",
     "Volume Breakout": "breakouts",
     "Stage 1 Bases": "bases",
@@ -1563,6 +1745,9 @@ SCREEN_DESCRIPTIONS = {
     "momentum": "A staged shortlist near a possible breakout, with explicit market, trend, base, RS and chart-review checks.",
     "trend": "Stocks meeting all eight Minervini Trend Template conditions.",
     "vcp": "Tightening bases with quieter volume and price near a possible pivot.",
+    # --- DARVAS BOX START (rollback-safe screen) ---
+    "darvas": "Automatic Darvas boxes: a high near the 52-week high holds as the top, the lowest later low that holds becomes the stop, and a close above the top ends the box.",
+    # --- DARVAS BOX END ---
     "entry": "Quality leaders at a usable entry point, scored on trend, sector, timing and risk.",
     "breakouts": "Recent price breakouts supported by elevated volume.",
     "bases": "Early sideways bases around a flat long-term moving average.",
@@ -1700,6 +1885,9 @@ elif active_screen == "chart":
             relative = history["Close"] / history["Benchmark_Close"].replace(0, np.nan)
             relative = relative / relative.dropna().iloc[0] * 100 if relative.notna().any() else relative
             base_history = chart_base_history(history)
+            # --- DARVAS BOX START (rollback-safe chart payload) ---
+            darvas_history = chart_darvas_history(history)
+            # --- DARVAS BOX END ---
             st.session_state["chart_explorer_data"] = {
                 "symbol": chart_symbol, "period": chart_period,
                 "benchmark": history.attrs.get("benchmark", "Unavailable"),
@@ -1712,6 +1900,9 @@ elif active_screen == "chart":
                 } for day, row in history.iterrows()],
                 "dates": [day.strftime("%Y-%m-%d") for day in history.index],
                 "base_history": base_history.to_dict("records"),
+                # --- DARVAS BOX START (rollback-safe chart payload) ---
+                "darvas_history": darvas_history.to_dict("records"),
+                # --- DARVAS BOX END ---
             }
         except Exception as exc:
             st.error(f"Could not load chart history: {exc}")
@@ -1728,7 +1919,11 @@ elif active_screen == "chart":
         # --- FUNDAMENTALS PANEL END ---
         # RS Rating + RS-line changes live in the chart header, so both chart views match.
         ui.chart_explorer(loaded["bars"], chart_symbol, "", "", 0.0,
-                          loaded.get("base_history", []), visible_window=visible_window, info=info)
+                          loaded.get("base_history", []), visible_window=visible_window, info=info,
+                          # --- DARVAS BOX START (rollback-safe chart overlay) ---
+                          darvas_history=loaded.get("darvas_history", [])
+                          # --- DARVAS BOX END ---
+                          )
         # --- FUNDAMENTALS PANEL START (rollback-safe) ---
         fp.render_if_requested(chart_symbol, str(names.get(chart_symbol, "") or ""))
         # --- FUNDAMENTALS PANEL END ---
@@ -1738,7 +1933,14 @@ elif active_screen == "chart":
             st.markdown(page_table, unsafe_allow_html=True)
         else:
             st.info("No completed or forming bases matching the rolling history rule were found in this chart data.")
-        st.caption(f"{len(loaded['bars'])} daily candles · prices through {last_day:%d %b %Y} · source: Yahoo Finance. Chart history, RS series and base records are session-only and are not saved to project files.")
+        # --- DARVAS BOX START (rollback-safe details) ---
+        darvas_page = _darvas_table_html(loaded.get("darvas_history", []))
+        if darvas_page:
+            st.markdown(darvas_page, unsafe_allow_html=True)
+        else:
+            st.info("No confirmed Darvas boxes were found in this chart data.")
+        # --- DARVAS BOX END ---
+        st.caption(f"{len(loaded['bars'])} daily candles · prices through {last_day:%d %b %Y} · source: Yahoo Finance. Chart history, RS series, base records and Darvas boxes are session-only and are not saved to project files.")
     elif loaded:
         st.info("Choose the loaded symbol and history range above, or load a new chart.")
 elif active_screen == "trend":
@@ -1778,6 +1980,53 @@ elif active_screen == "vcp":
              "volume. Closest to pivot first.", ui.COLS_PATTERN, ("Pct_To_Pivot", 1),
              titles={"Pivot": "VCP pivot", "Pct_To_Pivot": "To VCP pivot"},
              scan_date=selected_scan_date, history_dates=history_dates, history_key=history_key)
+# --- DARVAS BOX START (rollback-safe screen) ---
+elif active_screen == "darvas":
+    darvas_note = (
+        "<b>Darvas Box</b> uses the original box idea mechanically: a high within 5% of the trailing "
+        "52-week high whose level is not exceeded for 3 sessions becomes the <b>box top</b>; the lowest "
+        "later low that holds for 3 sessions becomes the <b>box bottom / stop</b>. The first close above "
+        "the top ends the box; a close below the bottom cancels it. Boxes over 20% tall are skipped, "
+        "and breakout volume is shown as confirmation, not a hard filter."
+    )
+    scan_key = str(as_of.date())
+    saved_has_darvas = {"Darvas_OK", "Darvas_Box_Top", "Darvas_Box_Bottom"}.issubset(df.columns)
+    if not saved_has_darvas:
+        with v_title:
+            run_darvas = st.button(
+                "Run Darvas scan", key="darvas_run_scan", icon=":material/play_arrow:",
+                help=f"Fetch up to {getattr(m, 'DARVAS_MAX_CANDIDATES', 140)} stronger, near-high stocks once for this scan date. Results stay in this session.",
+            )
+        if run_darvas:
+            st.session_state["darvas_scan_key"] = scan_key
+        st.caption("The saved scan predates Darvas columns. Run the on-demand scan once to calculate boxes from "
+                   "daily OHLCV in this session; no data file or GitHub update is written.")
+    if saved_has_darvas or st.session_state.get("darvas_scan_key") == scan_key:
+        with st.spinner("Reading Darvas boxes…"):
+            darvas_view = darvas_screen_frame(df)
+        if darvas_view is None or darvas_view.empty:
+            show(df.iloc[0:0], "darvas",
+                 darvas_note + " No current candidates matched after the on-demand calculation.",
+                 ui.COLS_DARVAS, ("RS_Rating", -1), scan_date=None)
+        else:
+            # The first render happens before the on-demand fetch, when Darvas fields
+            # do not exist yet. Switch this table to its own defaults once they do.
+            if (not st.session_state.get("darvas_columns_migrated", False)
+                    and "Darvas_Status" not in st.session_state.get("visible_columns_darvas", [])):
+                st.session_state["visible_columns_darvas"] = [
+                    c for c in ui.COLS_DARVAS if c in darvas_view.columns]
+                st.session_state["darvas_columns_migrated"] = True
+            show(darvas_view, "darvas",
+                 darvas_note + " Fresh breakouts sort first, then stocks still inside a valid box.",
+                 ui.COLS_DARVAS,
+                 ("Darvas_Breakout_Days_Ago", 1),
+                 titles={"Darvas_Box_Top": "Box top", "Darvas_Box_Bottom": "Box bottom / stop",
+                         "Darvas_Breakout_Vol_x": "Breakout vol",
+                         "Darvas_Status": "Darvas status", "Darvas_Reason": "Box details"},
+                 scan_date=None)
+    else:
+        show(df.iloc[0:0], "darvas", darvas_note, ui.COLS_DARVAS, ("RS_Rating", -1), scan_date=None)
+# --- DARVAS BOX END ---
 elif active_screen == "entry":
     with v_title:
         entry_preset = st.segmented_control(
@@ -2055,7 +2304,12 @@ else:
         other range/base checks. Review the candle, volume and nearby resistance yourself.</p></div>
         <div class="guide-card"><h4>RS blue dot</h4><p>The RS line reaches a 52-week high while the stock price
         remains more than 2% below its own 52-week high. It highlights relative strength leading price; it is
-        a watch signal, not a forecast.</p></div>""",
+        a watch signal, not a forecast.</p></div>
+        <!-- --- DARVAS BOX START (rollback-safe guide) --- -->
+        <div class="guide-card"><h4>Darvas boxes</h4><p>A high near the 52-week high that holds for three sessions
+        becomes the box top; the lowest later low that holds becomes the stop. A close above the top ends the box.
+        The chart draws the boxes automatically and the <b>Darvas boxes</b> chip is independent of <b>Base markers</b>.</p></div>
+        <!-- --- DARVAS BOX END --- -->""",
                     unsafe_allow_html=True)
 
     _gsec("06", "Learn from a live example")

@@ -145,6 +145,20 @@ BREAKOUT_LOOKBACK = 60           # must close above the prior 60-session high
 BREAKOUT_VOL_X = 1.5             # volume >= 1.5x the prior 50-day average
 BREAKOUT_RECENT_DAYS = 3         # look back over the last 3 sessions
 
+# --- DARVAS BOX START (rollback-safe: additive columns only) ---
+# Nicolas Darvas's original box idea, made mechanical: a high near the 52-week high
+# that is not exceeded for 3 sessions becomes the top; the lowest later low that
+# holds for 3 sessions becomes the bottom; the first close above the top ends the box.
+DARVAS_LOOKBACK = 252            # sessions used for the trailing 52-week high
+DARVAS_NEAR_HIGH_PCT = 5.0       # box top must be within 5% of that trailing high
+DARVAS_CONFIRM_DAYS = 3          # both top and bottom need 3 confirming sessions
+DARVAS_MAX_BOX_HEIGHT_PCT = 20.0 # skip boxes tall enough to make the stop too wide
+DARVAS_BREAKOUT_RECENT = 5       # "fresh" breakout window
+DARVAS_SCAN_NEAR_PCT = 10.0      # on-demand candidate screen: within 10% of the high
+DARVAS_MIN_RS = 60               # keep the on-demand fetch focused on stronger stocks
+DARVAS_MAX_CANDIDATES = 140      # upper bound for on-demand history downloads
+# --- DARVAS BOX END ---
+
 # ---- Momentum context (heuristic labels; use as screening context, not forecasts) ----
 VOLUME_PRESSURE_DAYS = 20
 UP_DOWN_VOLUME_DOMINANT = 1.25
@@ -525,6 +539,187 @@ def find_vcp(c, h, v):
     return [round(d * 100) for *_, d in run], float(h[run[-1][0]]), vol_ok
 
 
+# --- DARVAS BOX START (rollback-safe: new functions only) ---
+def find_darvas_boxes(high, low, close, volume, index=None,
+                      lookback=DARVAS_LOOKBACK, near_high_pct=DARVAS_NEAR_HIGH_PCT,
+                      confirm_days=DARVAS_CONFIRM_DAYS,
+                      max_height_pct=DARVAS_MAX_BOX_HEIGHT_PCT):
+    """Return completed/current Darvas boxes for one stock, oldest first.
+
+    The rules are deliberately mechanical and use only prices known at each date:
+    a top near the trailing 52-week high must survive 3 sessions, then the lowest
+    later low that survives 3 sessions becomes the bottom. The first close above
+    the top is the breakout; a close below the bottom before that cancels the box.
+    """
+    h = np.asarray(high, dtype=float)[-lookback:]
+    l = np.asarray(low, dtype=float)[-lookback:]
+    c = np.asarray(close, dtype=float)[-lookback:]
+    v = np.asarray(volume, dtype=float)[-lookback:]
+    n = min(len(h), len(l), len(c), len(v))
+    if n < confirm_days * 2 + 5:
+        return []
+    h, l, c, v = h[:n], l[:n], c[:n], v[:n]
+    if index is None:
+        dates = [str(i) for i in range(n)]
+    else:
+        dates = [str(x)[:10] for x in list(index)[-n:]]
+    while len(dates) < n:
+        dates.insert(0, str(len(dates)))
+
+    def day(i):
+        return dates[i] if 0 <= i < len(dates) else str(i)
+
+    # With a 252-session window the trailing high is the cumulative high so far.
+    clean_high = np.where(np.isfinite(h), h, -np.inf)
+    trailing_high = np.maximum.accumulate(clean_high)
+    trailing_high[~np.isfinite(trailing_high)] = np.nan
+
+    boxes, seek = [], 0
+    while seek < n - confirm_days * 2 - 1:
+        placed = False
+        for i in range(seek, n - confirm_days * 2 - 1):
+            if not np.isfinite(h[i]) or not np.isfinite(trailing_high[i]):
+                continue
+            if h[i] < trailing_high[i] * (1 - near_high_pct / 100.0):
+                continue
+            after_top = h[i + 1:i + 1 + confirm_days]
+            if after_top.size < confirm_days or not np.isfinite(after_top).any():
+                continue
+            if np.nanmax(after_top) > h[i]:
+                continue
+
+            bottom_i = None
+            for j in range(i + confirm_days, n - confirm_days):
+                if not np.isfinite(l[j]):
+                    continue
+                hold = l[j + 1:j + 1 + confirm_days]
+                if hold.size < confirm_days or not np.isfinite(hold).any():
+                    continue
+                if l[j] <= np.nanmin(hold):
+                    if bottom_i is None or l[j] < l[bottom_i]:
+                        bottom_i = j
+            if bottom_i is None:
+                continue
+
+            top, bottom = float(h[i]), float(l[bottom_i])
+            bottom_confirm_i = bottom_i + confirm_days
+            if top <= 0 or bottom <= 0 or bottom >= top:
+                continue
+            height = (top - bottom) / top * 100.0
+            if height > max_height_pct:
+                continue
+
+            inside = c[i + 1:bottom_confirm_i + 1]
+            if np.isfinite(inside).any() and np.nanmax(inside) > top:
+                continue
+
+            breakout_i, cancel_i = None, None
+            for j in range(bottom_confirm_i + 1, n):
+                if not np.isfinite(c[j]):
+                    continue
+                if c[j] > top:
+                    breakout_i = j
+                    break
+                if c[j] < bottom:
+                    cancel_i = j
+                    break
+            if cancel_i is not None and breakout_i is None:
+                continue
+
+            vol_x = None
+            if breakout_i is not None:
+                prior = v[max(0, breakout_i - 50):breakout_i]
+                if np.isfinite(v[breakout_i]) and np.isfinite(prior).any():
+                    average = np.nanmean(prior)
+                    if average > 0:
+                        vol_x = round(float(v[breakout_i] / average), 2)
+
+            days_ago = int(n - 1 - breakout_i) if breakout_i is not None else None
+            in_box_days = int(n - 1 - bottom_confirm_i) if breakout_i is None else None
+            if breakout_i is not None:
+                status = ("Closed above top today" if days_ago == 0
+                          else f"Closed above top {days_ago}d ago")
+                reason = (f"Top {top:,.2f} on {day(i)} held for {confirm_days} sessions; bottom "
+                          f"{bottom:,.2f} on {day(bottom_i)} held for {confirm_days} sessions. First close "
+                          f"above the top was {c[breakout_i]:,.2f} on {day(breakout_i)}")
+                reason += f" on {vol_x:.2f}× volume." if vol_x is not None else "."
+                reason += " Stop stays below the box bottom until a new higher box confirms."
+            else:
+                status = f"In box · {max(0, in_box_days)}d"
+                reason = (f"Top {top:,.2f} on {day(i)} held for {confirm_days} sessions; bottom "
+                          f"{bottom:,.2f} on {day(bottom_i)} held for {confirm_days} sessions. "
+                          f"Box height {height:.1f}%. Price is still inside: a close above {top:,.2f} ends it, "
+                          f"a close below {bottom:,.2f} cancels it.")
+
+            boxes.append({
+                "top": round(top, 4), "bottom": round(bottom, 4),
+                "height_pct": round(height, 2),
+                "top_i": int(i), "bottom_i": int(bottom_i),
+                "bottom_confirm_i": int(bottom_confirm_i),
+                "breakout_i": None if breakout_i is None else int(breakout_i),
+                "cancel_i": None if cancel_i is None else int(cancel_i),
+                "end_i": int(breakout_i if breakout_i is not None else n - 1),
+                "days_ago": days_ago, "in_box_days": in_box_days,
+                "breakout_vol": vol_x, "status": status, "reason": reason,
+                "top_date": day(i), "bottom_date": day(bottom_i),
+                "bottom_confirm_date": day(bottom_confirm_i),
+                "breakout_date": "" if breakout_i is None else day(breakout_i),
+                "end_date": day(breakout_i if breakout_i is not None else n - 1),
+            })
+            seek = (breakout_i if breakout_i is not None else bottom_confirm_i) + 1
+            placed = True
+            break
+        if not placed:
+            break
+    return boxes
+
+
+def darvas_columns(close, high, low, volume, idx):
+    """Additive scan columns for the current Darvas box of every rated stock."""
+    n = min(DARVAS_LOOKBACK, len(close))
+    c = close.iloc[-n:]
+    h = high.reindex(index=close.index).iloc[-n:]
+    l = low.reindex(index=close.index).iloc[-n:]
+    v = volume.reindex(index=close.index).iloc[-n:]
+    dates = close.index[-n:]
+    rows = {}
+    for col in idx:
+        boxes = find_darvas_boxes(h[col].to_numpy(), l[col].to_numpy(), c[col].to_numpy(),
+                                  v[col].to_numpy(), index=dates)
+        box = boxes[-1] if boxes else None
+        row = {"Darvas_OK": False, "Darvas_Status": "", "Darvas_Box_Top": np.nan,
+               "Darvas_Box_Bottom": np.nan, "Darvas_Box_Height_%": np.nan,
+               "Darvas_Breakout_Days_Ago": np.nan, "Darvas_Breakout_Vol_x": np.nan,
+               "Darvas_In_Box_Days": np.nan, "Darvas_Pct_To_Top": np.nan,
+               "Darvas_Stop": np.nan, "Darvas_Top_Date": "", "Darvas_Bottom_Date": "",
+               "Darvas_Breakout_Date": "", "Darvas_Reason": ""}
+        if box is not None:
+            last = float(c[col].iloc[-1]) if np.isfinite(c[col].iloc[-1]) else np.nan
+            if box["breakout_i"] is not None:
+                ok = (box["days_ago"] is not None
+                      and box["days_ago"] <= DARVAS_BREAKOUT_RECENT
+                      and np.isfinite(last) and last > box["bottom"])
+            else:
+                ok = (np.isfinite(last) and box["bottom"] <= last <= box["top"])
+            row.update({
+                "Darvas_OK": bool(ok), "Darvas_Status": box["status"],
+                "Darvas_Box_Top": box["top"], "Darvas_Box_Bottom": box["bottom"],
+                "Darvas_Box_Height_%": box["height_pct"],
+                "Darvas_Breakout_Days_Ago": box["days_ago"],
+                "Darvas_Breakout_Vol_x": box["breakout_vol"],
+                "Darvas_In_Box_Days": box["in_box_days"],
+                "Darvas_Pct_To_Top": round((box["top"] / last - 1) * 100, 1)
+                if np.isfinite(last) and last > 0 else np.nan,
+                "Darvas_Stop": box["bottom"], "Darvas_Top_Date": box["top_date"],
+                "Darvas_Bottom_Date": box["bottom_date"],
+                "Darvas_Breakout_Date": box["breakout_date"],
+                "Darvas_Reason": box["reason"],
+            })
+        rows[col] = row
+    return pd.DataFrame.from_dict(rows, orient="index").reindex(idx)
+# --- DARVAS BOX END ---
+
+
 def pattern_table(prices, ohlcv, idx):
     """Stage, base, VCP and volume-breakout columns for the rated stocks `idx`."""
     p = prices[idx]
@@ -535,6 +730,10 @@ def pattern_table(prices, ohlcv, idx):
 
     stage = classify_stage(p)
     base = detect_base(p, high, low)
+
+    # --- DARVAS BOX START (rollback-safe: additive columns only) ---
+    darvas = darvas_columns(p, high, low, vol, idx)
+    # --- DARVAS BOX END ---
 
     # --- VCP shape, stock by stock ---
     L = VCP_LOOKBACK
@@ -614,7 +813,7 @@ def pattern_table(prices, ohlcv, idx):
                 vcp_ret[col] = (px.iloc[-1] / px.iloc[-1 - k] - 1) * 100
                 break
 
-    return pd.DataFrame({
+    out = pd.DataFrame({
         "Stage": stage["Stage"], "Stage_Num": stage["Stage_Num"],
         "SMA150_Slope_%": stage["SMA150_Slope_%"],
         "Base_Forming": base["Base_Forming"], "Base_Days": base["Base_Days"],
@@ -638,6 +837,10 @@ def pattern_table(prices, ohlcv, idx):
         "Red_Days_20D": red_days.astype(int),
         # --- MINERVINI PRO END ---
     })
+    # --- DARVAS BOX START (rollback-safe: additive columns only) ---
+    out = out.join(darvas)
+    # --- DARVAS BOX END ---
+    return out
 
 
 def download_shares(tickers, workers=8):
@@ -738,7 +941,14 @@ def build_table(prices, bench, meta, ohlcv=None, shares=None):
              "Volume_Pressure_20D", "Up_Down_Vol_Ratio_20D", "Pct_Above_50SMA", "Extension_State",
              "Weighted_Return_%", "Stage", "TT_Score", "TT_Pass", "Stage1_Base", "VCP",
              "VCP_Setup", "VCP_Breakout", "VCP_Breakout_Days_Ago", "VCP_Breakout_Vol_x",
-             "VCP_Breakout_Return_%", "Vol_Breakout", "Liquid", "Avg_Value_Cr", "Market_Cap_Cr",
+             "VCP_Breakout_Return_%",
+             # --- DARVAS BOX START (rollback-safe: additive columns only) ---
+             "Darvas_OK", "Darvas_Status", "Darvas_Box_Top", "Darvas_Box_Bottom",
+             "Darvas_Box_Height_%", "Darvas_Breakout_Days_Ago", "Darvas_Breakout_Vol_x",
+             "Darvas_Stop", "Darvas_Top_Date", "Darvas_Bottom_Date", "Darvas_Breakout_Date",
+             "Darvas_Reason",
+             # --- DARVAS BOX END ---
+             "Vol_Breakout", "Liquid", "Avg_Value_Cr", "Market_Cap_Cr",
              "RS_Line_New_High", "RS_Line_Near_High",
              "RS_Blue_Dot", "RS_Line_Uptrend", "RSI14", "Close", "Chg_1D_%", "Pct_From_52W_High",
              "Pct_Above_52W_Low", "SMA50", "SMA150", "SMA200", "Market_Above_10SMA",

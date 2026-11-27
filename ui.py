@@ -441,6 +441,22 @@ SPEC = {
     "VCP_Breakout_Days_Ago": dict(t="VCP breakout · days ago", type="ago", pri=2),
     "VCP_Breakout_Vol_x": dict(t="VCP breakout vol", type="mult", pri=2),
     "VCP_Breakout_Return_%": dict(t="Return since VCP breakout", type="spct", pri=2),
+    # --- DARVAS BOX START (rollback-safe) ---
+    "Darvas_Status": dict(t="Darvas status", type="text", pri=1, left=True),
+    "Darvas_Box_Top": dict(t="Box top", type="n2", pri=1),
+    "Darvas_Box_Bottom": dict(t="Box bottom / stop", type="n2", pri=1),
+    "Darvas_Box_Height_%": dict(t="Box height", type="pct", pri=2),
+    "Darvas_Breakout_Days_Ago": dict(t="Breakout · days ago", type="ago", pri=2),
+    "Darvas_Breakout_Vol_x": dict(t="Breakout vol", type="mult", pri=2),
+    "Darvas_In_Box_Days": dict(t="In box days", type="n0", pri=2),
+    "Darvas_Pct_To_Top": dict(t="To box top", type="pct", pri=2),
+    "Darvas_Stop": dict(t="Stop", type="n2", pri=2),
+    "Darvas_Top_Date": dict(t="Top date", type="text", pri=3, left=True),
+    "Darvas_Bottom_Date": dict(t="Bottom date", type="text", pri=3, left=True),
+    "Darvas_Breakout_Date": dict(t="Breakout date", type="text", pri=3, left=True),
+    "Darvas_Reason": dict(t="Box details", type="txt", pri=3, left=True),
+    "Darvas_OK": dict(t="Darvas match", type="chk", pri=3),
+    # --- DARVAS BOX END ---
     "Entry_Score": dict(t="Entry score", type="bar", pri=1),
     "Entry_Type": dict(t="Entry type", type="text", pri=1, left=True),
     "Entry_Reason": dict(t="Why it scored", type="txt", pri=2, left=True),
@@ -497,6 +513,12 @@ COLS_VCP_BREAKOUT = ["Symbol", "RS_Rating", "Stage", "TT_Score", "VCP_Contractio
                      "VCP_Breakout_Days_Ago", "VCP_Breakout_Vol_x", "VCP_Breakout_Return_%",
                      "Close", "Chg_1D_%", "Pct_Above_50SMA", "RS_Line_Uptrend", "RS_Line_Near_High",
                      "Vol_x_50d", "Liquid", "Sector", "Company Name"]
+# --- DARVAS BOX START (rollback-safe) ---
+COLS_DARVAS = ["Symbol", "Darvas_Status", "RS_Rating", "TT_Score", "Stage", "Darvas_Box_Top",
+               "Darvas_Box_Bottom", "Darvas_Box_Height_%", "Darvas_Breakout_Vol_x",
+               "Darvas_Breakout_Days_Ago", "Darvas_In_Box_Days", "Darvas_Pct_To_Top",
+               "Close", "Chg_1D_%", "Pct_From_52W_High", "Sector", "Company Name", "Darvas_Reason"]
+# --- DARVAS BOX END ---
 COLS_ENTRY = ["Symbol", "Entry_Score", "Entry_Type", "RS_Rating", "TT_Score", "Sector_Strength",
               "Sector_Rank", "Pivot", "Pct_To_Pivot", "Breakout_Days_Ago", "Breakout_Vol_x",
               "VCP_Breakout_Days_Ago", "VCP_Breakout_Vol_x", "Pct_Above_50SMA", "Extension_State",
@@ -802,7 +824,8 @@ background:transparent;color:inherit;font:inherit;font-size:11px;padding:3px 7px
  <button class="chip on" id="t_s200" style="--c:#2563eb" title="Simple moving average of the last 200 closes"><i></i>SMA 200</button>
  <button class="chip on" id="t_vol" style="--c:#10b981" title="Volume with its 50-day average"><i class="b"></i>Volume</button>
  <button class="chip on" id="t_rs" style="--c:#16a34a" title="Price relative to the benchmark index"><i></i>RS line</button>
- <button class="chip on" id="t_base" style="--c:#3b82f6" title="Detected bases, numbered oldest first"><i class="b"></i>Bases</button>
+ <button class="chip on" id="t_base" style="--c:#3b82f6" title="Show base markers — detected bases, numbered oldest first"><i class="b"></i>Base markers</button>
+ <button class="chip on" id="t_darvas" style="--c:#8b5cf6" title="Show Darvas boxes — automatic box top, bottom / stop and breakout marker"><i class="b"></i>Darvas boxes</button>
 </div>
 </div>
 <div id="wrap">
@@ -840,7 +863,7 @@ const $=id=>document.getElementById(id);
 const SPANS={D:{'3M':63,'6M':126,'1Y':252,'2Y':504,'5Y':1260},W:{'3M':13,'6M':26,'1Y':52,'2Y':104,'5Y':260},M:{'3M':3,'6M':6,'1Y':12,'2Y':24,'5Y':60}};
 const RLIST=['3M','6M','1Y','2Y','5Y'],PERIOD={D:'day',W:'week',M:'month'};
 const MAS=[10,20,50,150,200];
-const on={s10:true,s20:true,s50:true,s150:true,s200:true,vol:true,rs:true,base:true};
+const on={s10:true,s20:true,s50:true,s150:true,s200:true,vol:true,rs:true,base:true,darvas:true};
 const DRAW_GID='mpDraw';
 const TOOLS={
   trend:{name:'segment',styles:{line:{color:'#f59e0b',size:1.8}}},
@@ -1075,6 +1098,35 @@ function drawBases(){
   }
 }
 
+/* --- DARVAS BOX START (rollback-safe overlay drawing) --- */
+const idxOfDate=s=>{
+  if(!s||!data.length)return Math.max(0,data.length-1);
+  const t=tsOf(s);let best=0,diff=Infinity;
+  for(let i=0;i<data.length;i++){const d=Math.abs(data[i].timestamp-t);if(d<diff){diff=d;best=i;}}
+  return best;
+};
+function drawDarvas(){
+  try{chart.removeOverlay({groupId:'mpDarvas'});}catch(e){}
+  if(!on.darvas||!data.length)return;
+  (P.darvas||[]).forEach((b,i)=>{
+    const top=Number(b._top),stop=Number(b._bottom);
+    if(!Number.isFinite(top)||!Number.isFinite(stop)||stop>=top)return;
+    let iTop=idxOfDate(b._top_date),iBot=idxOfDate(b._bottom_date);
+    let iEnd=idxOfDate(b._end_date||b._breakout_date||data[data.length-1].date);
+    if(iEnd<=iTop)iEnd=Math.min(data.length-1,iTop+1);
+    if(iBot<=iTop)iBot=Math.min(iEnd,iTop+1);
+    let iBrk=b._breakout_date?idxOfDate(b._breakout_date):iEnd;
+    iBrk=Math.max(iBot,Math.min(iEnd,iBrk));
+    chart.createOverlay({name:'mpDarvas',groupId:'mpDarvas',lock:true,
+      points:[{timestamp:data[iTop].timestamp,value:top},
+              {timestamp:data[iBot].timestamp,value:stop},
+              {timestamp:data[iEnd].timestamp,value:top},
+              {timestamp:data[iBrk].timestamp,value:top}],
+      extendData:{n:b._n||(i+1),breakout:!!b._breakout,vol:b._vol,status:b._status||''}});
+  });
+}
+/* --- DARVAS BOX END --- */
+
 /* ---------- legend (OHLC + 52-week) ---------- */
 function legend(i){
   const k=data[i]||data[data.length-1],p=data[(data.indexOf(k))-1];
@@ -1104,7 +1156,7 @@ function setTF(t){
   tf=t;data=aggregate(t);document.querySelectorAll('#tf button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
   rsBase=0;chart.setPeriod({span:1,type:PERIOD[t]});
   setTimeout(()=>{
-    drawBases();restoreDraw(readSaved());setDrawHidden(readHidden(),false);
+    drawBases();drawDarvas();restoreDraw(readSaved());setDrawHidden(readHidden(),false);
     const cur=serializeDraw();hist=[cur];future=[];lastSnap=JSON.stringify(cur);
     setRange(rng);legend();
   },160);
@@ -1150,6 +1202,31 @@ function start(){
         out.push({type:'text',attrs:{x:left?x0+28:bounding.width-6,y:y0-9,text:d.label,align:left?'left':'right',baseline:'middle'},styles:{color:blue,size:11,backgroundColor:'transparent',borderSize:0}});}
       return out;
     }});}catch(e){}
+  /* --- DARVAS BOX START (rollback-safe overlay registration) --- */
+  try{klinecharts.registerOverlay({name:'mpDarvas',totalStep:4,lock:true,needDefaultPointFigure:false,needDefaultXAxisFigure:false,needDefaultYAxisFigure:false,
+    createPointFigures:({coordinates,bounding,overlay})=>{
+      if(!coordinates||coordinates.length<4)return [];
+      const d=overlay.extendData||{},x0=coordinates[0].x,xb=coordinates[1].x,x1=coordinates[2].x,xbr=coordinates[3].x;
+      const yt=coordinates[0].y,yb=coordinates[1].y;
+      if(![x0,xb,x1,xbr,yt,yb].every(Number.isFinite))return [];
+      const up=!!d.breakout,gold='#f59e0b',red='#dc2626',purple='#8b5cf6';
+      const bw=(bounding&&bounding.width)||3000,ry=Math.min(yt,yb),rh=Math.max(2,Math.abs(yb-yt));
+      const fill=up?(dark?'rgba(16,185,129,.14)':'rgba(16,185,129,.08)'):(dark?'rgba(139,92,246,.14)':'rgba(139,92,246,.07)');
+      const out=[
+        {type:'rect',attrs:{x:x0,y:ry,width:Math.max(2,x1-x0),height:rh},styles:{style:'fill',color:fill}},
+        {type:'line',attrs:{coordinates:[{x:x0,y:yt},{x:x1,y:yt}]},styles:{style:'dashed',color:gold,size:1.3,dashedValue:[5,3]}},
+        {type:'line',attrs:{coordinates:[{x:xb,y:yb},{x:x1,y:yb}]},styles:{style:'dashed',color:red,size:1.3,dashedValue:[5,3]}},
+        {type:'circle',attrs:{x:x0+13,y:yt+14,r:9},styles:{style:'fill',color:purple,borderColor:purple}},
+        {type:'text',attrs:{x:x0+13,y:yt+14,text:'D'+String(d.n||''),align:'center',baseline:'middle'},styles:{color:'#fff',size:10,weight:'bold',backgroundColor:'transparent',borderSize:0}}];
+      if(up){
+        const bx=Math.max(30,Math.min(bw-30,xbr));
+        out.push({type:'line',attrs:{coordinates:[{x:bx,y:yt-3},{x:bx,y:yt-18}]},styles:{color:gold,size:1.6}});
+        out.push({type:'text',attrs:{x:bx,y:yt-20,text:d.vol!=null?('B '+Number(d.vol).toFixed(1)+'×'):'BREAKOUT',align:'center',baseline:'bottom'},
+          styles:{color:gold,size:10,weight:'bold',backgroundColor:'transparent',borderSize:0}});
+      }
+      return out;
+    }});}catch(e){}
+  /* --- DARVAS BOX END --- */
   try{klinecharts.registerOverlay({name:'mpRect',totalStep:3,needDefaultPointFigure:true,needDefaultXAxisFigure:false,needDefaultYAxisFigure:false,
     createPointFigures:({coordinates})=>{
       if(!coordinates||coordinates.length<2)return [];
@@ -1243,7 +1320,7 @@ function start(){
   $('chart').addEventListener('mouseup',()=>setTimeout(commitDraw,40));
   $('chart').addEventListener('contextmenu',()=>setTimeout(commitDraw,60));
   setTimeout(()=>{
-    drawBases();restoreDraw(readSaved());setDrawHidden(readHidden(),false);
+    drawBases();drawDarvas();restoreDraw(readSaved());setDrawHidden(readHidden(),false);
     const cur=serializeDraw();hist=[cur];future=[];lastSnap=JSON.stringify(cur);
     setRange(rng);legend();
   },250);
@@ -1266,9 +1343,12 @@ function setType(v){
 $('ctype').onchange=e=>setType(e.target.value);
 $('zin').onclick=()=>{const b=chart.getBarSpace().bar;chart.setBarSpace(Math.min(50,b*1.3));document.querySelectorAll('#rng button').forEach(x=>x.classList.remove('on'));};
 $('zout').onclick=()=>{const b=chart.getBarSpace().bar;chart.setBarSpace(Math.max(1,b/1.3));document.querySelectorAll('#rng button').forEach(x=>x.classList.remove('on'));};
-['s10','s20','s50','s150','s200','vol','rs','base'].forEach(k=>$('t_'+k).onclick=()=>{
+['s10','s20','s50','s150','s200','vol','rs','base','darvas'].forEach(k=>$('t_'+k).onclick=()=>{
   on[k]=!on[k];$('t_'+k).classList.toggle('on',on[k]);
   if(k==='base'){drawBases();return;}
+  /* --- DARVAS BOX START (rollback-safe toggle) --- */
+  if(k==='darvas'){drawDarvas();return;}
+  /* --- DARVAS BOX END --- */
   try{if(on[k])IND[k]();else dropInd(k);}catch(e){}
   setTimeout(()=>setRange(rng),30);
 });
@@ -1298,21 +1378,30 @@ start();
 
 
 def chart_explorer(bars, symbol: str, base_start: str, base_end: str, pivot: float,
-                   base_history=None, visible_window="1Y", height: int = 760,
+                   base_history=None, darvas_history=None, visible_window="1Y", height: int = 760,
                    info=None, footer: str = "") -> None:
     """Render the transient stock chart: header, D/W/M, range buttons, indicator toggles,
     numbered base boxes, volume and RS-line panes. Everything is drawn in the browser from the
     bars passed in, so switching timeframe or range never reruns Streamlit.
 
     `base_start` / `base_end` / `pivot` draw an optional manual marker (pass "" / "" / 0 to skip).
+    `darvas_history` adds an isolated Darvas box overlay with its own chip; base markers stay independent.
     `info` fills the header (symbol, company, price, RS, stage...); omit it to hide the header.
     """
     window = str(visible_window).upper()
     window = window if window in ("3M", "6M", "1Y", "2Y", "5Y") else "1Y"
     bases = [{k: v for k, v in row.items() if str(k).startswith("_")} for row in (base_history or [])
              if row.get("_start")]
+    # --- DARVAS BOX START (rollback-safe payload) ---
+    darvas = [{k: v for k, v in row.items() if str(k).startswith("_")}
+              for row in (darvas_history or []) if row.get("_top_date")]
+    # --- DARVAS BOX END ---
     payload = json.dumps({"symbol": symbol, "bars": bars, "start": base_start or "", "end": base_end or "",
-                          "pivot": float(pivot or 0), "bases": bases, "range": window,
+                          "pivot": float(pivot or 0), "bases": bases,
+                          # --- DARVAS BOX START (rollback-safe payload) ---
+                          "darvas": darvas,
+                          # --- DARVAS BOX END ---
+                          "range": window,
                           "height": int(height), "info": info, "footer": footer}).replace("</", "<\\/")
     html = _CHART_HTML.replace("__KLINE_SRC__", _KLINE_SRC).replace("__PAYLOAD__", payload)
     _embed(html, int(height))
