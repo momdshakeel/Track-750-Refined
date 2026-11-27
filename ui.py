@@ -450,6 +450,9 @@ SPEC = {
     "Filter_Count": dict(t="# filters", type="n0", pri=1),
     "In_Filters": dict(t="In filters", type="chips", pri=2, left=True),
     # --- MASTER LIST END ---
+    # --- MF INFLOW PANEL START (rollback-safe) ---
+    "MF_Month_Chg_%": dict(t="MF month chg %", type="spct", pri=1),
+    # --- MF INFLOW PANEL END ---
     "Stop_Distance_%": dict(t="Stop distance", type="pct", pri=2),
     "Pivot": dict(t="Pivot", type="n2", pri=2),
     "Pct_To_Pivot": dict(t="To pivot", type="pct", pri=1),
@@ -504,6 +507,12 @@ COLS_MASTER = ["Symbol", "Confluence_Score", "Tier", "Filter_Count", "In_Filters
                "RS_Rating", "TT_Score", "Stage", "VCP_Contractions", "Pct_To_Pivot",
                "Pct_From_52W_High", "Pct_Above_50SMA", "Close", "Sector", "Company Name"]
 # --- MASTER LIST END ---
+# --- MF INFLOW PANEL START (rollback-safe) ---
+COLS_MF_INFLOW = ["Symbol", "Confluence_Score", "Tier", "MF_Month_Chg_%", "Filter_Count",
+                  "In_Filters", "RS_Rating", "TT_Score", "Stage", "VCP_Contractions",
+                  "Pct_To_Pivot", "Pct_From_52W_High", "Pct_Above_50SMA", "Close",
+                  "Sector", "Company Name"]
+# --- MF INFLOW PANEL END ---
 COLS_SECTOR_STRENGTH = ["Rank", "Group", "Sector_Score", "Stocks", "Median_RS", "Avg_RS", "Avg_RS_Change",
                         "Pct_RS80", "Pct_TT_Pass", "Pct_Above_200", "Pct_Stage2", "TT_Pass_Count", "Blue_Dots",
                         "Avg_Weighted_Return_%", "Top_Stocks"]

@@ -34,6 +34,9 @@ import ui  # noqa: E402
 # --- FUNDAMENTALS PANEL START (rollback-safe) ---
 import fundamentals_panel as fp  # noqa: E402
 # --- FUNDAMENTALS PANEL END ---
+# --- MF INFLOW PANEL START (rollback-safe) ---
+import mf_inflow_panel as mf  # noqa: E402
+# --- MF INFLOW PANEL END ---
 
 CACHE_HOURS = 6
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -1548,6 +1551,9 @@ SCREEN_TABS = {
     # --- MASTER LIST START (rollback-safe) ---
     "Master List": "master",
     # --- MASTER LIST END ---
+    # --- MF INFLOW PANEL START (rollback-safe) ---
+    "MF Inflow": "mf_inflow",
+    # --- MF INFLOW PANEL END ---
     "Breadth & Sectors": "market",
     "All Stocks": "all",
     "How to Use This Scanner": "guide",
@@ -1564,6 +1570,9 @@ SCREEN_DESCRIPTIONS = {
     # --- MASTER LIST START (rollback-safe) ---
     "master": "One deduplicated list of every stock found by the other screens, with a weighted Confluence Score and A/B/C tier.",
     # --- MASTER LIST END ---
+    # --- MF INFLOW PANEL START (rollback-safe) ---
+    "mf_inflow": "Master List stocks matched against positive mutual-fund holding and one-month price changes, with one extra MF Month Chg % column.",
+    # --- MF INFLOW PANEL END ---
     "market": "Market participation, group strength, and the new rotation map.",
     "chart": "Search a stock and inspect daily candles, volume, moving averages, auto-detected bases and optional drawing tools.",
     "all": "The full rated universe, with the current Filters applied.",
@@ -1834,6 +1843,54 @@ elif active_screen == "master":
                  "Filter_Count": "# filters", "Tier": "Tier"},
          scan_date=None)
 # --- MASTER LIST END ---
+# --- MF INFLOW PANEL START (rollback-safe screen) ---
+elif active_screen == "mf_inflow":
+    with v_title:
+        refresh_public = st.button(
+            "Refresh public feed", key="mf_inflow_refresh", icon=":material/refresh:",
+            help="Try Trendlyne's public screener again. If Trendlyne asks for human verification, upload the final CSV below.",
+        )
+
+    with st.spinner("Loading Trendlyne MF inflow rows into this session…"):
+        public_frame, fetched_at, fetch_error = mf.load_month_change(force_refresh=refresh_public)
+
+    uploaded = st.file_uploader(
+        "Upload the final Trendlyne CSV (session only)",
+        type=["csv"], key="mf_inflow_csv",
+        help="Use the exported CSV with 'NSE Symbol' and 'Month Change %' columns. It is read in memory and is not saved to the app, repository, cache or database.",
+    )
+
+    source_text = ""
+    inflow = public_frame
+    if uploaded is not None:
+        try:
+            inflow = mf.parse_uploaded_csv(uploaded)
+            source_text = f"Uploaded CSV: {uploaded.name}"
+        except Exception as error:
+            st.error(f"Could not read that CSV: {error}")
+            inflow = mf._empty_result()
+            source_text = "Uploaded CSV could not be read"
+    elif fetch_error:
+        st.warning(f"{fetch_error} Upload the final CSV below to use this page.")
+    elif fetched_at is not None:
+        source_text = f"Public Trendlyne feed fetched {fetched_at.astimezone(IST):%d %b %Y, %H:%M IST}"
+
+    if not inflow.empty:
+        st.caption(
+            f"Source: {source_text} · {len(inflow)} Trendlyne rows have MF holding change > 0 and Month Chg % > 0. "
+            "Rows stay in this browser session only; no data file is written."
+        )
+    merged = mf.merge_master_with_month_change(master_list, inflow)
+    show(merged, "mf_inflow",
+         "<b>MF Inflow</b> maps the final Trendlyne mutual-fund inflow table against the current "
+         "<b>Master List</b>. Every Master List column is preserved; the only added field is "
+         "<b>MF Month Chg %</b> from the Trendlyne CSV. Only positive one-month price changes are kept. "
+         "Click a symbol to open its chart and review the entry setup.",
+         ui.COLS_MF_INFLOW, ("MF_Month_Chg_%", -1),
+         titles={"MF_Month_Chg_%": "MF Month Chg %", "Confluence_Score": "Confluence",
+                 "In_Filters": "In filters", "Filter_Count": "# filters", "Tier": "Tier"},
+         scan_date=None)
+# --- MF INFLOW PANEL END ---
 elif active_screen == "market":
     show_breadth_and_sectors()
 elif active_screen == "all":
