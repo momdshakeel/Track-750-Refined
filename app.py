@@ -1425,12 +1425,67 @@ def chart_darvas_history(history: pd.DataFrame) -> pd.DataFrame:
 # --- DARVAS BOX END ---
 
 
+# --- VCP BOX START (rollback-safe chart helper) ---
+def chart_vcp_history(history: pd.DataFrame) -> pd.DataFrame:
+    """Build the current scanner-style VCP box from the same chart history as the base markers.
+
+    One box only: the final tightening pullback detected by the shared scanner helper. The
+    left edge is its pivot high, the right edge is the qualifying breakout (or the latest bar
+    while still building), and the bottom is the lowest low of that pullback.
+    """
+    frame = history.dropna(subset=["High", "Low", "Close", "Volume"]).copy()
+    lookback = min(getattr(m, "VCP_LOOKBACK", 200), len(frame))
+    if lookback < 40:
+        return pd.DataFrame()
+    frame = frame.iloc[-lookback:]
+    close = frame["Close"].to_numpy(float)
+    high = frame["High"].to_numpy(float)
+    low = frame["Low"].to_numpy(float)
+    volume = frame["Volume"].to_numpy(float)
+    avg50 = pd.Series(volume).shift(1).rolling(50).mean().to_numpy(float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        vol_ratio = np.where(avg50 > 0, volume / avg50, 0.0)
+    box = m.find_vcp_box(close, high, volume, low=low, index=frame.index, vol_ratio=vol_ratio)
+    if box is None:
+        return pd.DataFrame()
+    pivot = float(box["pivot"])
+    now = float(close[-1])
+    pct = (now / pivot - 1) * 100 if pivot > 0 else 0.0
+    last_depth = box["depths"][-1] if box["depths"] else 0
+    breakout_date = box["breakout_date"]
+    vol_text = f"{box['breakout_vol']:.2f}×" if box["breakout_vol"] is not None else "—"
+    status = f"Breakout · now {pct:+.1f}%" if breakout_date else f"Building · now {pct:+.1f}%"
+    facts = [
+        f"Left edge {box['left_date']}: the final pullback's high ({_fmt_price(pivot)}) is the VCP pivot.",
+        f"Bottom {_fmt_price(box['box_low'])} on {box['low_date']}: the lowest low inside that final pullback "
+        f"({last_depth}% deep).",
+        f"Right edge {box['right_date']}: " + (
+            f"the first later close above the pivot on {vol_text} volume ({breakout_date})."
+            if breakout_date else "the latest bar because no qualifying close above the pivot has happened yet."),
+        f"Pullbacks {', '.join(str(x) + '%' for x in box['depths'])}; each one is tighter than the previous one.",
+    ]
+    return pd.DataFrame([{
+        "Box": "V1", "Left": box["left_date"], "Right": box["right_date"],
+        "Pivot": _fmt_price(pivot), "Bottom": _fmt_price(box["box_low"]),
+        "Depth": f"{last_depth}%", "Pullbacks": "→".join(map(str, box["depths"])),
+        "Breakout": breakout_date or "—", "Volume": vol_text, "Status": status,
+        "_left": box["left_date"], "_right": box["right_date"], "_low": box["low_date"],
+        "_pivot": pivot, "_bottom": float(box["box_low"]), "_breakout": breakout_date,
+        "_vol": box["breakout_vol"], "_breakout_flag": bool(breakout_date),
+        "_pullbacks": "→".join(map(str, box["depths"])), "_reason": facts,
+    }])
+# --- VCP BOX END ---
+
+
 def fetch_chart_payload(symbol: str, period: str) -> dict:
     """Fetch and calculate chart-only data in memory; no disk or repository writes."""
     history = load_chart_history(symbol, period)
     relative = history["Close"] / history["Benchmark_Close"].replace(0, np.nan)
     relative = relative / relative.dropna().iloc[0] * 100 if relative.notna().any() else relative
     base_history = chart_base_history(history)
+    # --- VCP BOX START (rollback-safe chart payload) ---
+    vcp_history = chart_vcp_history(history)
+    # --- VCP BOX END ---
     # --- DARVAS BOX START (rollback-safe chart payload) ---
     darvas_history = chart_darvas_history(history)
     # --- DARVAS BOX END ---
@@ -1446,6 +1501,9 @@ def fetch_chart_payload(symbol: str, period: str) -> dict:
         } for day, row in history.iterrows()],
         "dates": [day.strftime("%Y-%m-%d") for day in history.index],
         "base_history": base_history.to_dict("records"),
+        # --- VCP BOX START (rollback-safe chart payload) ---
+        "vcp_history": vcp_history.to_dict("records"),
+        # --- VCP BOX END ---
         # --- DARVAS BOX START (rollback-safe chart payload) ---
         "darvas_history": darvas_history.to_dict("records"),
         # --- DARVAS BOX END ---
@@ -1635,6 +1693,50 @@ def _darvas_table_html(records) -> str:
 # --- DARVAS BOX END ---
 
 
+# --- VCP BOX START (rollback-safe details card) ---
+def _vcp_table_html(records) -> str:
+    """One-row VCP box card using the same detector as the VCP scanner."""
+    rows = []
+    for record in records or []:
+        box = str(record.get("Box", "") or "")
+        if not box:
+            continue
+        facts = [str(x) for x in (record.get("_reason") or [])]
+        lines = "".join(f'<span class="ln">{_esc(fact)}</span>' for fact in facts)
+        info = f'<span class="i" tabindex="0">i<span class="tip wide"><b>Why {_esc(box)}?</b>{lines}</span></span>'
+        rows.append(
+            f'<tr><td data-l="Box">{_esc(box)}</td><td data-l="Left">{_esc(str(record.get("Left", "")))}</td>'
+            f'<td data-l="Right">{_esc(str(record.get("Right", "")))}</td>'
+            f'<td data-l="Pivot">{_esc(str(record.get("Pivot", "")))}</td>'
+            f'<td data-l="Bottom">{_esc(str(record.get("Bottom", "")))}</td>'
+            f'<td data-l="Depth">{_esc(str(record.get("Depth", "")))}</td>'
+            f'<td data-l="Pullbacks">{_esc(str(record.get("Pullbacks", "")))}</td>'
+            f'<td data-l="Breakout">{_esc(str(record.get("Breakout", "")))} · '
+            f'{_esc(str(record.get("Volume", "")))}</td>'
+            f'<td data-l="Status">{_esc(str(record.get("Status", "")))} {info}</td></tr>')
+    if not rows:
+        return ""
+    head = ('<thead><tr><th>Box' + '<span class="i" tabindex="0">i<span class="tip">V1 is the current '
+            'VCP pullback detected by the same rule as the scanner. It is drawn on the chart with a '
+            'teal box.</span></span>' + '</th>'
+            '<th>Left' + '<span class="i" tabindex="0">i<span class="tip">Left edge = the high where the final '
+            'tightening pullback starts. That high is the VCP pivot.</span></span>' + '</th>'
+            '<th>Right' + '<span class="i" tabindex="0">i<span class="tip">Right edge = the qualifying close above '
+            'the pivot on at least 1.5× average volume, or the latest bar while the box is still building.</span></span>' + '</th>'
+            '<th>Pivot</th><th>Bottom</th><th>Depth</th><th>Pullbacks</th>'
+            '<th>Breakout' + '<span class="i" tabindex="0">i<span class="tip">Date and volume of the first close '
+            'above the pivot after the final low. The chart marks it with a labelled arrow.</span></span>' + '</th>'
+            '<th>Status' + '<span class="i" tabindex="0">i<span class="tip">Click the i on the row for the exact '
+            'left, bottom, right and breakout numbers.</span></span>' + '</th></tr></thead>')
+    return (_BASE_TABLE_CSS + '<div class="mp-bt"><h4>VCP pivot box<small>scanner rule · final contraction</small></h4>'
+            f'<table>{head}<tbody>{"".join(rows)}</tbody></table>'
+            '<p class="note"><b>Left</b> = final pullback high / VCP pivot. <b>Bottom</b> = lowest low of that '
+            'pullback. <b>Right</b> = breakout close or the latest bar while building. This is separate from the '
+            'broader <b>Base history</b> pivot and the <b>Darvas</b> top. The <b>VCP pivot box</b> chip toggles only '
+            'this teal overlay; Base markers and Darvas boxes stay independent.</p></div>')
+# --- VCP BOX END ---
+
+
 def _num(row, key, default=None):
     """Read a numeric field from a scan row, returning `default` for missing / NaN values."""
     try:
@@ -1710,6 +1812,12 @@ def _show_symbol_chart_dialog(symbol: str) -> None:
     row_match = result[result["Symbol"].astype(str) == symbol]
     row = row_match.iloc[0] if not row_match.empty else None
     info = _chart_info(symbol, row, bars, payload["benchmark"])
+    # --- VCP BOX START (header fallback for older saved scans) ---
+    vcp_records = payload.get("vcp_history", [])
+    if vcp_records and info.get("vcpPivot") is None:
+        info["vcpPivot"] = round(float(vcp_records[0].get("_pivot", 0) or 0), 2) or None
+        info["vcpContractions"] = str(vcp_records[0].get("_pullbacks", "") or "")
+    # --- VCP BOX END ---
     # --- FUNDAMENTALS PANEL START (rollback-safe) ---
     company_name = str(row.get("Company Name", "")) if row is not None else ""
     # --- FUNDAMENTALS PANEL END ---
@@ -1724,6 +1832,13 @@ def _show_symbol_chart_dialog(symbol: str) -> None:
         st.markdown(table_html, unsafe_allow_html=True)
     else:
         st.info("No completed or forming bases matching the rolling history rule were found.")
+    # --- VCP BOX START (rollback-safe details) ---
+    vcp_table = _vcp_table_html(vcp_records)
+    if vcp_table:
+        st.markdown(vcp_table, unsafe_allow_html=True)
+    else:
+        st.info("No VCP pivot box was found in the recent daily history.")
+    # --- VCP BOX END ---
     # --- DARVAS BOX START (rollback-safe details) ---
     darvas_table = _darvas_table_html(payload.get("darvas_history", []))
     if darvas_table:
@@ -1739,6 +1854,9 @@ def _show_symbol_chart_dialog(symbol: str) -> None:
         # --- FUNDAMENTALS PANEL END ---
         ui.chart_explorer(bars, symbol, "", "", 0.0,
                           payload["base_history"], visible_window="1Y", info=info, footer=footer,
+                          # --- VCP BOX START (rollback-safe chart overlay) ---
+                          vcp_history=vcp_records,
+                          # --- VCP BOX END ---
                           # --- DARVAS BOX START (rollback-safe chart overlay) ---
                           darvas_history=payload.get("darvas_history", [])
                           # --- DARVAS BOX END ---
@@ -1937,6 +2055,9 @@ elif active_screen == "chart":
             relative = history["Close"] / history["Benchmark_Close"].replace(0, np.nan)
             relative = relative / relative.dropna().iloc[0] * 100 if relative.notna().any() else relative
             base_history = chart_base_history(history)
+            # --- VCP BOX START (rollback-safe chart payload) ---
+            vcp_history = chart_vcp_history(history)
+            # --- VCP BOX END ---
             # --- DARVAS BOX START (rollback-safe chart payload) ---
             darvas_history = chart_darvas_history(history)
             # --- DARVAS BOX END ---
@@ -1952,6 +2073,9 @@ elif active_screen == "chart":
                 } for day, row in history.iterrows()],
                 "dates": [day.strftime("%Y-%m-%d") for day in history.index],
                 "base_history": base_history.to_dict("records"),
+                # --- VCP BOX START (rollback-safe chart payload) ---
+                "vcp_history": vcp_history.to_dict("records"),
+                # --- VCP BOX END ---
                 # --- DARVAS BOX START (rollback-safe chart payload) ---
                 "darvas_history": darvas_history.to_dict("records"),
                 # --- DARVAS BOX END ---
@@ -1964,6 +2088,12 @@ elif active_screen == "chart":
         stock_row = result[result["Symbol"].astype(str) == chart_symbol]
         stock_row = stock_row.iloc[0] if not stock_row.empty else None
         info = _chart_info(chart_symbol, stock_row, loaded["bars"], loaded["benchmark"])
+        # --- VCP BOX START (header fallback for older saved scans) ---
+        vcp_records = loaded.get("vcp_history", [])
+        if vcp_records and info.get("vcpPivot") is None:
+            info["vcpPivot"] = round(float(vcp_records[0].get("_pivot", 0) or 0), 2) or None
+            info["vcpContractions"] = str(vcp_records[0].get("_pullbacks", "") or "")
+        # --- VCP BOX END ---
         range_default = {"1y": "1Y", "2y": "2Y", "5y": "5Y"}.get(chart_period, "2Y")
         visible_window = range_default  # initial zoom; the chart has its own range buttons
         # --- FUNDAMENTALS PANEL START (rollback-safe) ---
@@ -1972,6 +2102,9 @@ elif active_screen == "chart":
         # RS Rating + RS-line changes live in the chart header, so both chart views match.
         ui.chart_explorer(loaded["bars"], chart_symbol, "", "", 0.0,
                           loaded.get("base_history", []), visible_window=visible_window, info=info,
+                          # --- VCP BOX START (rollback-safe chart overlay) ---
+                          vcp_history=vcp_records,
+                          # --- VCP BOX END ---
                           # --- DARVAS BOX START (rollback-safe chart overlay) ---
                           darvas_history=loaded.get("darvas_history", [])
                           # --- DARVAS BOX END ---
@@ -1985,6 +2118,13 @@ elif active_screen == "chart":
             st.markdown(page_table, unsafe_allow_html=True)
         else:
             st.info("No completed or forming bases matching the rolling history rule were found in this chart data.")
+        # --- VCP BOX START (rollback-safe details) ---
+        vcp_page = _vcp_table_html(vcp_records)
+        if vcp_page:
+            st.markdown(vcp_page, unsafe_allow_html=True)
+        else:
+            st.info("No VCP pivot box was found in this chart data.")
+        # --- VCP BOX END ---
         # --- DARVAS BOX START (rollback-safe details) ---
         darvas_page = _darvas_table_html(loaded.get("darvas_history", []))
         if darvas_page:
@@ -1992,7 +2132,7 @@ elif active_screen == "chart":
         else:
             st.info("No confirmed Darvas boxes were found in this chart data.")
         # --- DARVAS BOX END ---
-        st.caption(f"{len(loaded['bars'])} daily candles · prices through {last_day:%d %b %Y} · source: Yahoo Finance. Chart history, RS series, base records and Darvas boxes are session-only and are not saved to project files.")
+        st.caption(f"{len(loaded['bars'])} daily candles · prices through {last_day:%d %b %Y} · source: Yahoo Finance. Chart history, RS series, base records, VCP pivot box and Darvas boxes are session-only and are not saved to project files.")
     elif loaded:
         st.info("Choose the loaded symbol and history range above, or load a new chart.")
 elif active_screen == "trend":
@@ -2443,7 +2583,7 @@ else:
         ("B", "RS Rating and RS Δ", "Prefer a high or improving RS Rating for leaders, then check the chart header’s RS Δ vs benchmark and whether the RS line is near a high. These are complementary signals, not guarantees."),
         ("C", "Trend Template (score / 8)", "Open the Trend Template tab or the stock’s ⓘ details. Review each condition, not just the total. A full 8/8 means all eight rules pass on the latest data; it does not mean the stock is automatically a buy."),
         ("D", "Trend, volume and setup", "Strong trend / Developing / Weakening are rule-based summaries. Volume pressure compares volume on up days with down days over 20 sessions; it is not delivery data. VCP, base and breakout labels are pattern candidates that need chart confirmation."),
-        ("E", "Confirm on the in-app chart", "Click the symbol to open the KLine chart. Auto-detected bases, the VCP pivot, sector strength and the Trend Template pill are already marked; the small pencil opens optional drawing tools when you want to annotate."),
+        ("E", "Confirm on the in-app chart", "Click the symbol to open the KLine chart. Auto-detected bases, the scanner VCP pivot box, Darvas boxes, sector strength and the Trend Template pill are all available; the small pencil opens optional drawing tools when you want to annotate."),
     ]
     for letter, title, description in steps:
         st.markdown(f'<div class="guide-step"><b><span class="gl">{letter}</span> · {title}</b><p>{description}</p></div>',
@@ -2471,8 +2611,10 @@ else:
     s1, s2 = st.columns(2)
     with s1:
         st.markdown(f"""<div class="guide-card"><h4>VCP setups</h4><p>Switch between <b>Setups</b> and
-        <b>Recent breakouts</b> inside the tab. Auto-marked charts show <b>Base pivot</b> and <b>VCP pivot</b>
-        separately. A pivot is a level to watch; wait for chart confirmation rather than treating proximity as a signal.</p></div>
+        <b>Recent breakouts</b> inside the tab. Auto-marked charts show the teal <b>VCP pivot box</b> with true
+        left/right boundaries and a labelled breakout arrow, separate from the broader <b>Base pivot</b> and the
+        purple <b>Darvas boxes</b>. The three chips are independent. A pivot is a level to watch; wait for chart
+        confirmation rather than treating proximity as a signal.</p></div>
         <div class="guide-card"><h4>Entry candidates</h4><p>A ranked shortlist combining RS, Trend Template, sector
         strength, a fresh pivot/breakout, volume and extension risk. Use <b>Strict</b>, <b>Balanced</b>,
         <b>Relaxed</b> or <b>Minervini Pro</b> to control selectivity; Balanced is the default.

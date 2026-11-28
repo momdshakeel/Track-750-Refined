@@ -81,6 +81,15 @@ def main():
         darvas_fields = sum(1 for c in result.columns if str(c).startswith("Darvas_"))
         print(f"Darvas boxes: {darvas_matches} matches; {darvas_fields} fields saved to latest.csv")
     # --- DARVAS BOX END ---
+    # --- VCP BOX START (rollback-safe: daily-job output) ---
+    vcp_required = {"VCP_Base_Start", "VCP_Base_End", "VCP_Box_Low"}
+    missing_vcp = vcp_required.difference(result.columns)
+    if missing_vcp:
+        print(f"WARNING: VCP box columns missing from scan output: {sorted(missing_vcp)}")
+    else:
+        vcp_matches = int(result["VCP_Base_Start"].fillna("").astype(str).ne("").sum())
+        print(f"VCP pivot boxes: {vcp_matches} saved with left/right boundaries")
+    # --- VCP BOX END ---
     if len(result) < 0.5 * len(meta):
         sys.exit(f"ERROR: only {len(result)} stocks could be rated - keeping the previous results.")
 

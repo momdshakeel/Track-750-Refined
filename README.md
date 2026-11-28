@@ -37,6 +37,9 @@ GitHub job. The app only reads the saved results, so visitors never wait and Yah
 Darvas boxes are computed in that same job from the OHLCV already downloaded for the other scans, and the resulting
 `Darvas_*` columns are saved directly in `data/latest.csv`. Older saved scans without those columns still use the
 one-click on-demand fallback in the app.
+The VCP detector also saves `VCP_Base_Start`, `VCP_Base_End`, `VCP_Box_Low`, `VCP_Low_Date`,
+`VCP_Breakout_Date` and `VCP_Box_Breakout_Vol_x`, so the chart can draw the scanner's VCP box with true
+left/right boundaries and a labelled breakout marker. Its teal chip is independent of Base markers and Darvas boxes.
 If `data/latest.csv` does not exist yet, the app falls back to calculating live (3-5 minutes).
 For the VCP and Breakouts screens, the daily workflow also archives one full scan per market date under
 `data/history/` and removes snapshots older than 30 calendar days. Their date selector applies the existing

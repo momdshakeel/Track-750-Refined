@@ -508,16 +508,21 @@ def zigzag(c, pct):
     return piv
 
 
-def find_vcp(c, h, v):
-    """VCP shape on one stock. c/h/v = close/high/volume arrays for the last VCP_LOOKBACK sessions.
-    Returns (pullback depths in %, pivot price, volume_contracting) or None."""
+def find_vcp_detail(c, h, v):
+    """VCP shape with the indices of the final contraction.
+
+    `c/h/v` are close/high/volume arrays for the last VCP_LOOKBACK sessions. The returned
+    `left_i` is the final pullback's high (the pivot date) and `low_i` is its low, both
+    relative to the original arrays. Kept separate from the legacy tuple API so the
+    box overlay can use exactly the same detector as the scanner.
+    """
     if len(c) < 40 or np.isnan(c).any() or np.isnan(h).any():
         return None
     pk = int(np.argmax(c))                       # left peak of the pattern
     if len(c) - pk < 20:
         return None
-    c, h, v = c[pk:], h[pk:], v[pk:]
-    piv = zigzag(c, ZIGZAG_PCT)
+    tail_c, tail_h, tail_v = c[pk:], h[pk:], v[pk:]
+    piv = zigzag(tail_c, ZIGZAG_PCT)
     legs = [(a[0], b[0], (a[1] - b[1]) / a[1])   # (start idx, end idx, depth)
             for a, b in zip(piv[:-1], piv[1:]) if a[2] == 1 and b[2] == -1]
     if len(legs) < MIN_CONTRACTIONS:
@@ -534,9 +539,68 @@ def find_vcp(c, h, v):
         return None
     with np.errstate(all="ignore"), warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        vols = [np.nanmean(v[a:b + 1]) for a, b, _ in run]
+        vols = [np.nanmean(tail_v[a:b + 1]) for a, b, _ in run]
     vol_ok = bool(vols[-1] < vols[0])
-    return [round(d * 100) for *_, d in run], float(h[run[-1][0]]), vol_ok
+    return {"depths": [round(d * 100) for *_, d in run],
+            "pivot": float(tail_h[run[-1][0]]), "vol_ok": vol_ok,
+            "pattern_i": pk, "left_i": pk + int(run[-1][0]), "low_i": pk + int(run[-1][1])}
+
+
+def find_vcp(c, h, v):
+    """Legacy VCP tuple API: (pullback depths in %, pivot price, volume_contracting)."""
+    detail = find_vcp_detail(c, h, v)
+    if detail is None:
+        return None
+    return detail["depths"], detail["pivot"], detail["vol_ok"]
+
+
+# --- VCP BOX START (rollback-safe: additive helper only) ---
+def find_vcp_box(c, h, v, low=None, index=None, vol_ratio=None):
+    """One current VCP box with true left/right boundaries and breakout details.
+
+    Left edge = the final tightening pullback's high (the scanner pivot). Right edge =
+    the first later close above that pivot on at least 1.5x average volume, or the latest
+    bar while the box is still building. The bottom is the lowest low inside the final
+    pullback. `vol_ratio` should already be close / 50-day-average-volume.
+    """
+    detail = find_vcp_detail(c, h, v)
+    if detail is None:
+        return None
+    arr_c = np.asarray(c, dtype=float)
+    arr_v = np.asarray(v, dtype=float)
+    arr_low = np.asarray(low if low is not None else arr_c, dtype=float)
+    left_i, low_i, n = detail["left_i"], detail["low_i"], len(arr_c)
+
+    def stamp(i):
+        if index is None or i is None or i < 0 or i >= len(index):
+            return ""
+        try:
+            return pd.Timestamp(index[i]).strftime("%Y-%m-%d")
+        except (TypeError, ValueError):
+            return str(index[i])
+
+    breakout_i = None
+    if vol_ratio is not None and len(vol_ratio) == n:
+        prev = np.concatenate(([np.nan], arr_c[:-1]))
+        cross = ((arr_c > detail["pivot"]) & (prev <= detail["pivot"])
+                 & (np.asarray(vol_ratio, dtype=float) >= BREAKOUT_VOL_X))
+        cross[:low_i + 1] = False
+        found = np.flatnonzero(cross)
+        if len(found):
+            breakout_i = int(found[0])   # the first qualifying close sets the right edge
+    right_i = breakout_i if breakout_i is not None else n - 1
+    box_low = float(np.nanmin(arr_low[left_i:low_i + 1])) if low_i >= left_i else float(arr_low[low_i])
+    return {
+        **detail,
+        "box_low": box_low,
+        "breakout_i": breakout_i,
+        "right_i": int(right_i),
+        "breakout_vol": float(np.asarray(vol_ratio, dtype=float)[breakout_i]) if breakout_i is not None else None,
+        "breakout_recent": bool(breakout_i is not None and n - 1 - breakout_i <= VCP_BREAKOUT_RECENT),
+        "left_date": stamp(left_i), "low_date": stamp(low_i),
+        "right_date": stamp(right_i), "breakout_date": stamp(breakout_i),
+    }
+# --- VCP BOX END ---
 
 
 # --- DARVAS BOX START (rollback-safe: new functions only) ---
@@ -737,15 +801,34 @@ def pattern_table(prices, ohlcv, idx):
 
     # --- VCP shape, stock by stock ---
     L = VCP_LOOKBACK
-    C, H, V = (x.iloc[-L:].to_numpy(float) for x in (p, high, vol))
+    C, H, LW, V = (x.iloc[-L:].to_numpy(float) for x in (p, high, low, vol))
+    dates = p.index[-L:]
+    vr = vol / vol.shift(1).rolling(50).mean()
     vcp_pivot = pd.Series(np.nan, index=idx)
     vcp_text = pd.Series("", index=idx)
     vcp_vol_ok = pd.Series(False, index=idx)
+    # --- VCP BOX START (rollback-safe: additive scan columns) ---
+    vcp_boxes = {}
+    vcp_start = pd.Series("", index=idx, dtype=object)
+    vcp_end = pd.Series("", index=idx, dtype=object)
+    vcp_low_date = pd.Series("", index=idx, dtype=object)
+    vcp_box_low = pd.Series(np.nan, index=idx)
+    vcp_box_breakout = pd.Series("", index=idx, dtype=object)
+    vcp_box_vol = pd.Series(np.nan, index=idx)
+    # --- VCP BOX END ---
     for j, col in enumerate(idx):
-        r = find_vcp(C[:, j], H[:, j], V[:, j])
-        if r is not None:
-            depths, pv, vok = r
-            vcp_pivot[col], vcp_text[col], vcp_vol_ok[col] = pv, "→".join(map(str, depths)), vok
+        # --- VCP BOX START (same detector now also returns true box boundaries) ---
+        box = find_vcp_box(C[:, j], H[:, j], V[:, j], low=LW[:, j], index=dates,
+                           vol_ratio=vr[col].iloc[-L:].to_numpy(float))
+        if box is not None:
+            vcp_boxes[col] = box
+            vcp_pivot[col], vcp_text[col], vcp_vol_ok[col] = (
+                box["pivot"], "→".join(map(str, box["depths"])), box["vol_ok"])
+            vcp_start[col], vcp_end[col], vcp_low_date[col] = box["left_date"], box["right_date"], box["low_date"]
+            vcp_box_low[col] = box["box_low"]
+            vcp_box_breakout[col] = box["breakout_date"]
+            vcp_box_vol[col] = box["breakout_vol"]
+        # --- VCP BOX END ---
 
     pivot = vcp_pivot.fillna(base["Base_Pivot"])
     pct_to_pivot = ((pivot / last - 1) * 100).round(1)
@@ -754,7 +837,7 @@ def pattern_table(prices, ohlcv, idx):
 
     # --- volume ---
     dry = vol.iloc[-10:].mean() / vol.iloc[-50:].mean() <= VOL_DRYUP_RATIO
-    vol_x_today = (vol.iloc[-1] / vol.shift(1).rolling(50).mean().iloc[-1]).round(2)
+    vol_x_today = vr.iloc[-1].round(2)
     up_volume = vol.where(p.diff() > 0, 0).iloc[-VOLUME_PRESSURE_DAYS:].sum()
     down_volume = vol.where(p.diff() < 0, 0).iloc[-VOLUME_PRESSURE_DAYS:].sum()
     up_down_ratio = (up_volume / down_volume.replace(0, np.nan)).round(2)
@@ -783,7 +866,6 @@ def pattern_table(prices, ohlcv, idx):
     prior_hi = high.rolling(BREAKOUT_LOOKBACK).max().shift(1)
     prior_lo = low.rolling(BREAKOUT_LOOKBACK).min().shift(1)
     prior_depth = (prior_hi - prior_lo) / prior_hi
-    vr = vol / vol.shift(1).rolling(50).mean()
     day_range = (high - low).where(lambda x: x > 0)
     close_pos = (p - low) / day_range
     brk = (p > prior_hi) & (vr >= BREAKOUT_VOL_X) & (prior_depth <= MAX_BASE_DEPTH) & (close_pos >= 0.5)
@@ -825,6 +907,11 @@ def pattern_table(prices, ohlcv, idx):
         "Pivot": pivot.round(2), "Pct_To_Pivot": pct_to_pivot,
         "VCP_Breakout": vcp_days.notna(), "VCP_Breakout_Days_Ago": vcp_days,
         "VCP_Breakout_Vol_x": vcp_vol.round(2), "VCP_Breakout_Return_%": vcp_ret.round(1),
+        # --- VCP BOX START (rollback-safe: additive columns only) ---
+        "VCP_Base_Start": vcp_start, "VCP_Base_End": vcp_end,
+        "VCP_Box_Low": vcp_box_low.round(2), "VCP_Low_Date": vcp_low_date,
+        "VCP_Breakout_Date": vcp_box_breakout, "VCP_Box_Breakout_Vol_x": vcp_box_vol.round(2),
+        # --- VCP BOX END ---
         "Vol_Breakout": days_ago.notna(), "Breakout_Days_Ago": days_ago,
         "Breakout_Vol_x": brk_vol.round(2), "Vol_x_50d": vol_x_today,
         "Up_Down_Vol_Ratio_20D": up_down_ratio,

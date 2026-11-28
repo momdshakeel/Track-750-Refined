@@ -54,7 +54,7 @@ git push -u origin main
 1. In the new repository go to **Settings → Actions → General → Workflow permissions**.
 2. Select **Read and write permissions** and save. (The job commits `data/` back to the repo.)
 3. Open the **Actions** tab → **Daily scan** → **Run workflow**.
-4. Wait a few minutes. A `data/` folder with `latest.csv` (now including the `Darvas_*` columns),
+4. Wait a few minutes. A `data/` folder with `latest.csv` (now including the `Darvas_*` and `VCP_Base_*` / `VCP_Box_*` columns),
    `meta.json`, `shares.csv`, and `data/history/` should appear after a successful run.
 5. Open the **Actions** tab → **Weekly shortlist** → **Run workflow** once. This creates
    `data/weekly/weekly_shortlist.json` with the first top-20 snapshot. Afterwards it runs automatically every

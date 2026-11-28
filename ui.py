@@ -836,6 +836,7 @@ background:transparent;color:inherit;font:inherit;font-size:11px;padding:3px 7px
  <button class="chip on" id="t_s200" style="--c:#2563eb" title="Simple moving average of the last 200 closes"><i></i>SMA 200</button>
  <button class="chip on" id="t_vol" style="--c:#10b981" title="Volume with its 50-day average"><i class="b"></i>Volume</button>
  <button class="chip on" id="t_rs" style="--c:#16a34a" title="Price relative to the benchmark index"><i></i>RS line</button>
+ <button class="chip on" id="t_vcp" style="--c:#0891b2" title="Show the scanner VCP pivot box — final tightening leg with left/right boundaries and breakout marker"><i class="b"></i>VCP pivot box</button>
  <button class="chip on" id="t_base" style="--c:#3b82f6" title="Show base markers — detected bases, numbered oldest first"><i class="b"></i>Base markers</button>
  <button class="chip on" id="t_darvas" style="--c:#8b5cf6" title="Show Darvas boxes — automatic box top, bottom / stop and breakout marker"><i class="b"></i>Darvas boxes</button>
 </div>
@@ -875,7 +876,7 @@ const $=id=>document.getElementById(id);
 const SPANS={D:{'3M':63,'6M':126,'1Y':252,'2Y':504,'5Y':1260},W:{'3M':13,'6M':26,'1Y':52,'2Y':104,'5Y':260},M:{'3M':3,'6M':6,'1Y':12,'2Y':24,'5Y':60}};
 const RLIST=['3M','6M','1Y','2Y','5Y'],PERIOD={D:'day',W:'week',M:'month'};
 const MAS=[10,20,50,150,200];
-const on={s10:true,s20:true,s50:true,s150:true,s200:true,vol:true,rs:true,base:true,darvas:true};
+const on={s10:true,s20:true,s50:true,s150:true,s200:true,vol:true,rs:true,vcp:true,base:true,darvas:true};
 const DRAW_GID='mpDraw';
 const TOOLS={
   trend:{name:'segment',styles:{line:{color:'#f59e0b',size:1.8}}},
@@ -1110,6 +1111,23 @@ function drawBases(){
   }
 }
 
+/* --- VCP BOX START (rollback-safe overlay drawing) --- */
+function drawVcp(){
+  try{chart.removeOverlay({groupId:'mpVcp'});}catch(e){}
+  if(!on.vcp||!P.vcp||!P.vcp.length||!data.length)return;
+  const b=P.vcp[0],pivot=Number(b._pivot),bottom=Number(b._bottom);
+  if(!Number.isFinite(pivot)||!Number.isFinite(bottom)||bottom>=pivot)return;
+  const left=idxOfDate(b._left),low=idxOfDate(b._low),right=idxOfDate(b._right);
+  const mark=b._breakout?idxOfDate(b._breakout):right;
+  chart.createOverlay({name:'mpVcp',groupId:'mpVcp',lock:true,
+    points:[{timestamp:data[left].timestamp,value:pivot},
+            {timestamp:data[low].timestamp,value:bottom},
+            {timestamp:data[right].timestamp,value:pivot},
+            {timestamp:data[mark].timestamp,value:pivot}],
+    extendData:{n:'V1',breakout:!!b._breakout,vol:b._vol,pullbacks:b._pullbacks||''}});
+}
+/* --- VCP BOX END --- */
+
 /* --- DARVAS BOX START (rollback-safe overlay drawing) --- */
 const idxOfDate=s=>{
   if(!s||!data.length)return Math.max(0,data.length-1);
@@ -1168,7 +1186,7 @@ function setTF(t){
   tf=t;data=aggregate(t);document.querySelectorAll('#tf button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
   rsBase=0;chart.setPeriod({span:1,type:PERIOD[t]});
   setTimeout(()=>{
-    drawBases();drawDarvas();restoreDraw(readSaved());setDrawHidden(readHidden(),false);
+    drawBases();drawVcp();drawDarvas();restoreDraw(readSaved());setDrawHidden(readHidden(),false);
     const cur=serializeDraw();hist=[cur];future=[];lastSnap=JSON.stringify(cur);
     setRange(rng);legend();
   },160);
@@ -1214,6 +1232,35 @@ function start(){
         out.push({type:'text',attrs:{x:left?x0+28:bounding.width-6,y:y0-9,text:d.label,align:left?'left':'right',baseline:'middle'},styles:{color:blue,size:11,backgroundColor:'transparent',borderSize:0}});}
       return out;
     }});}catch(e){}
+  /* --- VCP BOX START (rollback-safe overlay registration) --- */
+  try{klinecharts.registerOverlay({name:'mpVcp',totalStep:4,lock:true,needDefaultPointFigure:false,needDefaultXAxisFigure:false,needDefaultYAxisFigure:false,
+    createPointFigures:({coordinates,bounding,overlay})=>{
+      if(!coordinates||coordinates.length<4)return [];
+      const d=overlay.extendData||{},x0=coordinates[0].x,xb=coordinates[1].x,x1=coordinates[2].x,xm=coordinates[3].x;
+      const yt=coordinates[0].y,yb=coordinates[1].y;
+      if(![x0,xb,x1,xm,yt,yb].every(Number.isFinite))return [];
+      const teal='#0891b2',gold='#f59e0b',red='#dc2626';
+      const bw=(bounding&&bounding.width)||3000,ry=Math.min(yt,yb),rh=Math.max(2,Math.abs(yb-yt));
+      const out=[
+        {type:'rect',attrs:{x:x0,y:ry,width:Math.max(2,x1-x0),height:rh},styles:{style:'fill',color:dark?'rgba(8,145,178,.16)':'rgba(8,145,178,.09)'}},
+        {type:'line',attrs:{coordinates:[{x:x0,y:yt},{x:x1,y:yt}]},styles:{style:'dashed',color:teal,size:1.4,dashedValue:[5,3]}},
+        {type:'line',attrs:{coordinates:[{x:xb,y:yb},{x:x1,y:yb}]},styles:{style:'dashed',color:red,size:1.2,dashedValue:[5,3]}},
+        {type:'line',attrs:{coordinates:[{x:x0,y:ry},{x:x0,y:ry+rh}]},styles:{color:teal,size:1.4}},
+        {type:'line',attrs:{coordinates:[{x:x1,y:ry},{x:x1,y:ry+rh}]},styles:{style:'dashed',color:teal,size:1.2,dashedValue:[4,3]}},
+        {type:'circle',attrs:{x:x0+13,y:ry+14,r:9},styles:{style:'fill',color:teal,borderColor:teal}},
+        {type:'text',attrs:{x:x0+13,y:ry+14,text:'V1',align:'center',baseline:'middle'},styles:{color:'#fff',size:10,weight:'bold',backgroundColor:'transparent',borderSize:0}}];
+      if(d.breakout){
+        const bx=Math.max(30,Math.min(bw-30,xm));
+        out.push({type:'line',attrs:{coordinates:[{x:bx,y:yt-3},{x:bx,y:yt-18}]},styles:{color:gold,size:1.7}});
+        out.push({type:'text',attrs:{x:bx,y:yt-20,text:d.vol!=null?('B '+Number(d.vol).toFixed(1)+'×'):'BREAKOUT',align:'center',baseline:'bottom'},
+          styles:{color:gold,size:10,weight:'bold',backgroundColor:'transparent',borderSize:0}});
+      }else{
+        out.push({type:'text',attrs:{x:Math.max(30,Math.min(bw-30,x1)),y:ry-8,text:'BUILDING',align:'center',baseline:'bottom'},
+          styles:{color:teal,size:10,weight:'bold',backgroundColor:'transparent',borderSize:0}});
+      }
+      return out;
+    }});}catch(e){}
+  /* --- VCP BOX END --- */
   /* --- DARVAS BOX START (rollback-safe overlay registration) --- */
   try{klinecharts.registerOverlay({name:'mpDarvas',totalStep:4,lock:true,needDefaultPointFigure:false,needDefaultXAxisFigure:false,needDefaultYAxisFigure:false,
     createPointFigures:({coordinates,bounding,overlay})=>{
@@ -1332,7 +1379,7 @@ function start(){
   $('chart').addEventListener('mouseup',()=>setTimeout(commitDraw,40));
   $('chart').addEventListener('contextmenu',()=>setTimeout(commitDraw,60));
   setTimeout(()=>{
-    drawBases();drawDarvas();restoreDraw(readSaved());setDrawHidden(readHidden(),false);
+    drawBases();drawVcp();drawDarvas();restoreDraw(readSaved());setDrawHidden(readHidden(),false);
     const cur=serializeDraw();hist=[cur];future=[];lastSnap=JSON.stringify(cur);
     setRange(rng);legend();
   },250);
@@ -1355,8 +1402,11 @@ function setType(v){
 $('ctype').onchange=e=>setType(e.target.value);
 $('zin').onclick=()=>{const b=chart.getBarSpace().bar;chart.setBarSpace(Math.min(50,b*1.3));document.querySelectorAll('#rng button').forEach(x=>x.classList.remove('on'));};
 $('zout').onclick=()=>{const b=chart.getBarSpace().bar;chart.setBarSpace(Math.max(1,b/1.3));document.querySelectorAll('#rng button').forEach(x=>x.classList.remove('on'));};
-['s10','s20','s50','s150','s200','vol','rs','base','darvas'].forEach(k=>$('t_'+k).onclick=()=>{
+['s10','s20','s50','s150','s200','vol','rs','vcp','base','darvas'].forEach(k=>$('t_'+k).onclick=()=>{
   on[k]=!on[k];$('t_'+k).classList.toggle('on',on[k]);
+  /* --- VCP BOX START (rollback-safe toggle) --- */
+  if(k==='vcp'){drawVcp();return;}
+  /* --- VCP BOX END --- */
   if(k==='base'){drawBases();return;}
   /* --- DARVAS BOX START (rollback-safe toggle) --- */
   if(k==='darvas'){drawDarvas();return;}
@@ -1390,26 +1440,36 @@ start();
 
 
 def chart_explorer(bars, symbol: str, base_start: str, base_end: str, pivot: float,
-                   base_history=None, darvas_history=None, visible_window="1Y", height: int = 760,
+                   base_history=None, vcp_history=None, darvas_history=None, visible_window="1Y", height: int = 760,
                    info=None, footer: str = "") -> None:
     """Render the transient stock chart: header, D/W/M, range buttons, indicator toggles,
-    numbered base boxes, volume and RS-line panes. Everything is drawn in the browser from the
-    bars passed in, so switching timeframe or range never reruns Streamlit.
+    numbered base boxes, the scanner VCP pivot box, Darvas boxes, volume and RS-line panes.
+    Everything is drawn in the browser from the bars passed in, so switching timeframe or range
+    never reruns Streamlit.
 
     `base_start` / `base_end` / `pivot` draw an optional manual marker (pass "" / "" / 0 to skip).
-    `darvas_history` adds an isolated Darvas box overlay with its own chip; base markers stay independent.
+    `vcp_history` adds the scanner-style VCP box with true left/right boundaries and a breakout
+    marker; `darvas_history` adds an isolated Darvas overlay. Both have their own chips and the
+    base markers stay independent.
     `info` fills the header (symbol, company, price, RS, stage...); omit it to hide the header.
     """
     window = str(visible_window).upper()
     window = window if window in ("3M", "6M", "1Y", "2Y", "5Y") else "1Y"
     bases = [{k: v for k, v in row.items() if str(k).startswith("_")} for row in (base_history or [])
              if row.get("_start")]
+    # --- VCP BOX START (rollback-safe payload) ---
+    vcp = [{k: v for k, v in row.items() if str(k).startswith("_")}
+           for row in (vcp_history or []) if row.get("_left")]
+    # --- VCP BOX END ---
     # --- DARVAS BOX START (rollback-safe payload) ---
     darvas = [{k: v for k, v in row.items() if str(k).startswith("_")}
               for row in (darvas_history or []) if row.get("_top_date")]
     # --- DARVAS BOX END ---
     payload = json.dumps({"symbol": symbol, "bars": bars, "start": base_start or "", "end": base_end or "",
                           "pivot": float(pivot or 0), "bases": bases,
+                          # --- VCP BOX START (rollback-safe payload) ---
+                          "vcp": vcp,
+                          # --- VCP BOX END ---
                           # --- DARVAS BOX START (rollback-safe payload) ---
                           "darvas": darvas,
                           # --- DARVAS BOX END ---
